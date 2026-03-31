@@ -7,3 +7,7 @@ python-jose[cryptography]==3.3.0
 python-multipart
 python-dotenv
 requests
+fpdf2==2.7.9
+jinja2
+cvss==3.6                  # optional but useful for CVSS v3.1/v4
+slowapi                    # better rate limiting (replace simple in-memory if needed)
