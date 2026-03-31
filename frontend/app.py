@@ -29,7 +29,7 @@ st.markdown("""
     .severity-medium {color: #eab308; font-weight: bold;}
     .severity-low {color: #22d3ee; font-weight: bold;}
     .severity-info {color: #64748b;}
-    .progress-container {margin: 1.5rem 0;}
+    .builder-credit {color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 1rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,9 +72,13 @@ def api_delete(endpoint):
 # ==================== LOGIN / REGISTER ====================
 if not st.session_state.token:
     st.markdown("<h1 style='text-align:center;'>🛡️ Vulnora</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color:#94a3b8;'>Real Vulnerability Scanner for Ethical Hacking & Global GRC</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; color:#94a3b8; font-size:1.1rem;'>Real Vulnerability Scanner for Ethical Hacking & Global GRC</p>", unsafe_allow_html=True)
+    
+    # Builder credit on login screen
+    st.markdown("<p class='builder-credit'>Built by Cybersecurity Researcher — séç gúy</p>", unsafe_allow_html=True)
 
     tab1, tab2 = st.tabs(["🔑 Sign In", "📝 Register"])
+    
     with tab1:
         username = st.text_input("Username", value="admin", key="login_user")
         password = st.text_input("Password", type="password", key="login_pass")
@@ -109,7 +113,10 @@ if not st.session_state.token:
 # ==================== SIDEBAR ====================
 with st.sidebar:
     st.markdown("### 🛡️ Vulnora")
-    st.caption("Ethical Hacking Platform")
+    st.caption("Real Vulnerability Scanner • Ethical Hacking & Global GRC")
+    
+    # Professional builder credit in sidebar
+    st.markdown("<p class='builder-credit'>Built by Cybersecurity Researcher — séç gúy</p>", unsafe_allow_html=True)
 
     pages = {
         "Dashboard": "dashboard",
@@ -132,6 +139,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
+# ==================== MAIN HEADER ====================
 st.markdown(f"<h1>🛡️ Vulnora • {st.session_state.user.get('username')}</h1>", unsafe_allow_html=True)
 st.caption("Real-Time Vulnerability Scanning • Global Standards Compliance")
 
@@ -157,7 +165,7 @@ def show_live_progress(scan_id):
                 prog = 10
             elif status == "running":
                 st.warning(f"Scanning {scan['target']}... (Elapsed: {elapsed}s)")
-                prog = min(30 + (elapsed % 60), 85)  # simulated smooth progress
+                prog = min(30 + (elapsed % 60), 85)
             elif status == "completed":
                 st.success(f"✅ Scan Completed! Risk Score: **{risk}**/10")
                 st.session_state.polling = False
@@ -174,7 +182,7 @@ def show_live_progress(scan_id):
 
         if status in ["completed", "failed"]:
             break
-        time.sleep(3)  # Poll every 3 seconds
+        time.sleep(3)
 
 # ==================== PAGES ====================
 
@@ -252,7 +260,6 @@ elif current_page == "results":
                     st.markdown(f"**Remediation:** {f.get('remediation','N/A')}")
                     st.markdown(f"<span class='severity-{sev}'>Severity: {sev.upper()}</span>", unsafe_allow_html=True)
 
-            # Export findings
             if nuclei:
                 if st.button("Export Findings as JSON"):
                     st.download_button("Download JSON", data=json.dumps(nuclei, indent=2), file_name=f"findings-{scan['target']}.json", mime="application/json")
@@ -286,7 +293,6 @@ elif current_page == "reports":
 elif current_page == "compliance":
     st.subheader("🌍 Global Compliance Mapping")
     st.info("Findings are automatically mapped to ISO 27001, NIST CSF, GDPR, PCI DSS, SOC 2, and CIS Controls.")
-    # You can expand this with more detailed mapping if desired
 
 elif current_page == "admin" and st.session_state.role == "admin":
     st.subheader("Admin Panel")
