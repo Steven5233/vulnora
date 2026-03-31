@@ -95,8 +95,8 @@ Open **http://localhost:8501** in your browser.
 
 ## 📖 How to Use
 
-1. Register or login (default: `admin` / your password)
-2. Add target assets (domains or IPs you are authorized to test)
+1. Register or login (default: `user` / your password)
+2. Add target assets (domains or you you are authorized to test)
 3. Go to **Launch Scan**, select target and modules
 4. Watch **Live Progress** during the scan
 5. View detailed results and severity findings
