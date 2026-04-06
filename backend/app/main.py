@@ -3,6 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routers import auth, users, scans, assets
 
+# Optional: Pre-warm nuclei templates on startup (in Docker)
+import subprocess
+@app.on_event("startup")
+async def startup_event():
+    try:
+        subprocess.run(["nuclei", "-update-templates"], timeout=60, capture_output=True)
+        print("Nuclei templates updated successfully")
+    except:
+        pass  # Non-critical
+        
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
