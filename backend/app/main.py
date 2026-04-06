@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routers import auth, users, scans, assets
-
+from .celery_app import celery_app   # noqa: F401
 # Optional: Pre-warm nuclei templates on startup (in Docker)
 import subprocess
 @app.on_event("startup")
