@@ -1,24 +1,31 @@
-# 🛡️ Vulnora
+# Vulnora
 
-**Real Vulnerability Scanner for Ethical Hacking & Global GRC**
+**An open-source vulnerability management platform that bridges technical security findings with global compliance frameworks (NIST, ISO 27001, GDPR, PCI DSS).**
 
-A modern full-stack penetration testing platform that performs **real vulnerability scanning** using industry-standard tools and generates professional reports with global compliance mapping.
+A modern full-stack penetration testing and vulnerability management platform that performs **real vulnerability scanning** using industry-standard tools (Nuclei, Nmap, Subfinder, httpx, feroxbuster) and generates professional PDF reports with automated compliance mapping.
 
 **Built by Cybersecurity Researcher — séç gúy**
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-- Real scanning with **Nuclei** (vulnerabilities & CVEs), **Subfinder** (subdomains), **Nmap** (ports), and **httpx** (tech & headers)
-- **Live scan progress** with real-time status and progress bar
-- Professional **PDF reports** including global compliance mapping
-- Asset inventory management
-- Role-based access control (users see only their own scans; admins see everything)
-- Input validation and security hardening to prevent injection attacks
-- Dark cyber-themed Streamlit frontend
-- Export scan history as CSV and findings as JSON
-- Global compliance mapping to:
+- **Real scanning engine** powered by:
+  - **Nuclei** (CVEs, vulnerabilities, misconfigurations)
+  - **Subfinder** (subdomain enumeration)
+  - **Nmap** (port & service discovery with structured parsing)
+  - **httpx** (tech detection & headers)
+  - **Feroxbuster** (directory brute-forcing)
+- **High-performance parallel scanning** using `ThreadPoolExecutor`
+- **Reliable background worker** with **Celery + Redis** (queued, running, retry support)
+- **Live per-module progress tracking** (subdomains, nuclei, directories, etc.)
+- Professional **PDF reports** with risk scoring and **global compliance mapping**
+- Asset inventory management with ownership enforcement
+- Role-based access control (RBAC) – users see only their assets/scans
+- Strong input validation and security hardening against command injection
+- Dark cyber-themed Streamlit frontend with real-time polling
+- Export scan history (CSV) and findings (JSON)
+- Compliance mapping to major frameworks:
   - ISO 27001
   - NIST Cybersecurity Framework (CSF)
   - GDPR
@@ -30,161 +37,181 @@ A modern full-stack penetration testing platform that performs **real vulnerabil
 
 ## 🚀 Quick Start with Docker (Recommended)
 
-The easiest way to run Vulnora is using **Docker Compose** — everything starts with a single command.
+The easiest way to run Vulnora is using **Docker Compose** — now includes Redis and Celery worker.
 
 ### Prerequisites
-- Docker and Docker Compose installed
+
+- Docker and Docker Compose
 - Git
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/Steven5233/vulnora.git
 cd vulnora
 ```
 
-### 2. Create the `.env` file for the backend
+### 2. Create the `.env` file
+
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-Edit `backend/.env` and set a **strong SECRET_KEY** (at least 64 random characters). Example:
-```
+Edit `backend/.env` and set a **strong SECRET_KEY**:
+
+```env
 SECRET_KEY=your-super-long-random-secret-key-here-1234567890
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 DATABASE_URL=sqlite:///./data/vulnora.db
+REDIS_URL=redis://redis:6379/0
 ```
 
 ### 3. Start Vulnora
+
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-- **Frontend** will be available at: **http://localhost:8501**
-- **Backend API** runs at: **http://localhost:8000** (usually not accessed directly)
+**Services:**
+- **Frontend (Streamlit)**: http://localhost:8501
+- **Backend API**: http://localhost:8000
+- **Celery Worker**: Background scan processing
+- **Redis**: Task queue & result backend
+- **Flower (optional)**: Task monitoring at http://localhost:5555
 
-To stop the application:
+To stop:
+
 ```bash
 docker compose down
 ```
 
 ---
 
-## 🛠️ Manual Setup (Without Docker)
+## Manual Setup (Advanced)
 
 ### 1. Install Scanning Tools
+
 ```bash
 go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
-sudo apt install -y nmap
+sudo apt install -y nmap feroxbuster
 nuclei -update-templates
 ```
 
 ### 2. Backend Setup
+
 ```bash
 cd backend
-cp .env.example .env
-# Edit .env with a strong SECRET_KEY
 pip install -r requirements.txt
-```
-
-### 3. Frontend Setup
-```bash
-cd ../frontend
-pip install streamlit requests pandas
-```
-
-### 4. Run Manually (Two Terminals)
-
-**Terminal 1 – Backend**
-```bash
-cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-**Terminal 2 – Frontend**
+### 3. Frontend Setup
+
 ```bash
-cd frontend
+cd ../frontend
+pip install streamlit requests pandas
 streamlit run app.py --server.port 8501
 ```
 
-Open **http://localhost:8501** in your browser.
+### 4. Start Celery Worker (separate terminal)
 
----
-
-## 📖 How to Use
-
-1. Register a new account or login (default admin credentials can be used if seeded)
-2. Add target **Assets** (only domains/IPs you are authorized to test)
-3. Go to **Launch Scan**, select target and scanning modules
-4. Watch **Live Progress** during the scan
-5. View detailed results with severity ratings
-6. Download **PDF Report** containing global compliance mapping
-7. Export history or findings for documentation
-
-> **⚠️ Legal & Ethical Notice**: Use Vulnora **only** on systems you own or have explicit written permission to test. Unauthorized scanning is illegal.
-
----
-
-## 🔐 Security Features
-
-- Strong input validation to prevent command injection
-- JWT-based authentication with rate limiting
-- Users can only view their own scan results (admin exception)
-- No raw shell command execution
-- Secure PDF report generation
-
----
-
-## 📁 Project Structure
+```bash
+cd backend
+celery -A app.celery_app worker --loglevel=info --concurrency=4
 ```
+
+---
+
+## How to Use
+
+1. Register / Login (RBAC enforced)
+2. Add authorized **Assets** (domains or IPs you own or have permission to test)
+3. Go to **Launch Scan** → select target and modules
+4. Monitor **Live Progress** (per-module status updates via polling)
+5. View results with severity, CVSS, and structured findings
+6. Download **professional PDF report** with compliance mapping and executive-level insights
+7. Export data for audits or ticketing systems
+
+> **Legal & Ethical Notice**  
+> Vulnora is for **ethical hacking, authorized penetration testing, and security research only**.  
+> Unauthorized scanning of systems without explicit permission is illegal. Use responsibly.
+
+---
+
+## Architecture & Improvements
+
+- **Backend**: FastAPI + SQLAlchemy + JWT auth
+- **Scanning Engine**: Parallel execution with timeouts and structured output parsing
+- **Background Tasks**: Celery + Redis (replaces simple threading) – reliable queuing, retries, and monitoring
+- **Frontend**: Streamlit with dark cyber theme and real-time progress polling
+- **Reports**: FPDF with compliance mapping to global standards
+- **Deployment**: Docker Compose with dedicated Celery worker and Redis
+
+**Recent Major Enhancements:**
+- Switched to Celery + Redis for robust background scan management
+- Added per-module live progress tracking
+- Parallelized scanning modules for faster execution
+- Integrated feroxbuster for directory enumeration
+- Improved Nmap output with structured port/service data
+- Better error handling, timeouts, and risk scoring
+
+---
+
+## Project Structure
+
+```bash
 vulnora/
-├── backend/              # FastAPI backend + real scanning logic
+├── backend/              # FastAPI + Celery tasks + scanning logic
+│   ├── app/
+│   │   ├── celery_app.py     # Celery configuration
+│   │   ├── routers/scans.py  # Main scan logic & API
+│   │   ├── constants.py      # Shared configs & compliance map
+│   │   └── report.py         # PDF generation
 ├── frontend/             # Streamlit UI
-├── docker-compose.yml    # One-command deployment
-├── backend/Dockerfile
-├── frontend/Dockerfile
+├── docker-compose.yml    # Includes redis + celery-worker
 ├── README.md
 ```
 
 ---
 
-## 🛣️ Suggested Improvements & Roadmap
+## Roadmap (Upcoming)
 
-- [ ] Replace simple threading with **Celery + Redis** for better background scan management
-- [ ] Add per-module live progress (e.g., "Running Nuclei...", "Enumerating subdomains...")
-- [ ] Team / Organization support with shared assets
-- [ ] Integration with additional tools (OWASP ZAP, Burp Suite export)
-- [ ] Automated daily Nuclei template updates via cron
-- [ ] Vulnerability trending and historical comparison dashboard
-- [ ] SBOM generation for the project itself (recommended for security tools)
+- OWASP ZAP integration for active DAST scanning
+- Historical trending & compliance dashboard
+- Team/Organization support with shared assets
+- AI-powered executive summary in PDF reports
+- Scheduled/recurring scans
+- Export to DefectDojo / Dradis
 
-Contributions are welcome! Feel free to open issues or submit Pull Requests.
-
----
-
-## 📝 License
-
-This project is intended for **educational and ethical hacking / penetration testing purposes only**.  
-Any unauthorized use against systems without permission is strictly prohibited.
+Contributions are welcome! Open issues or submit Pull Requests.
 
 ---
 
-## 👨‍💻 Author
+## License
+
+This project is intended for **educational, ethical hacking, and authorized penetration testing purposes only**.
+
+Unauthorized use against systems without explicit written permission is strictly prohibited.
+
+---
+
+## Author
 
 **Built by Cybersecurity Researcher — séç gúy**
 
 ---
 
-## ⭐ Support
+## Support
 
-If you find Vulnora useful, please give it a ⭐ on GitHub!
+⭐ Star the repo if you find Vulnora useful!
 
-Questions, suggestions, bug reports, or feature requests are welcome via GitHub Issues.
+Questions, bug reports, or feature requests → GitHub Issues.
 
 **Stay ethical. Scan responsibly.**
 
-Made with ❤️ for the cybersecurity community.
+Made with passion for the cybersecurity community.
 ```
