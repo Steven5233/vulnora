@@ -1,4 +1,3 @@
-```markdown
 # Vulnora
 
 [![License](https://img.shields.io/github/license/Steven5233/vulnora)](LICENSE)
