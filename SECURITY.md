@@ -14,7 +14,7 @@ If you discover a security vulnerability in Vulnora itself (e.g., in the backend
 
 Instead, send a detailed report to:
 
-**Email**: [your-email@example.com] (replace with your real contact email)
+**Email**: [secguy22@gmail.com] (replace with your real contact email)
 
 or open a **private vulnerability report** on GitHub (if enabled).
 
