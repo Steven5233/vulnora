@@ -39,7 +39,10 @@ class AssetOut(AssetBase):
 
 class ScanCreate(BaseModel):
     target: str
-    modules: List[str] = ["subdomains", "ports", "nuclei", "headers", "tech", "dirs", "screenshot"]
+    modules: List[str] = [
+        "subdomains", "ports", "nuclei", "headers", "tech", 
+        "dirs", "screenshot", "logic_flaws"
+    ]
 
 class ScanOut(BaseModel):
     id: int
