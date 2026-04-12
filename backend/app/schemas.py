@@ -1,3 +1,4 @@
+# backend/app/schemas.py
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -37,12 +38,26 @@ class AssetOut(AssetBase):
     class Config:
         from_attributes = True
 
+# Available logic flaw checks (must match keys in logic_scanner.py)
+LOGIC_CHECK_OPTIONS = [
+    "client_side_trust",
+    "idor",
+    "bfla",
+    "workflow_bypass",
+    "race_condition",
+    "price_manipulation"
+]
+
 class ScanCreate(BaseModel):
     target: str
     modules: List[str] = [
         "subdomains", "ports", "nuclei", "headers", "tech", 
         "dirs", "screenshot", "logic_flaws"
     ]
+    # New: Optional list of specific logic checks.
+    # If "logic_flaws" is selected and this is provided, only those checks run.
+    # If empty or None → run all logic checks.
+    selected_logic_checks: Optional[List[str]] = None
 
 class ScanOut(BaseModel):
     id: int
