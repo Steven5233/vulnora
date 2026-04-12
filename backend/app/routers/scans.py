@@ -2,18 +2,19 @@
 import subprocess
 import time
 import json
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import field_validator
 
 from .. import schemas, models, dependencies
 from ..database import SessionLocal
 from ..constants import COMPLIANCE_MAP, ALLOWED_MODULES, TOOL_CONFIG
 from ..celery_app import celery_app
 from .report import generate_pdf_report
+from ..logic_scanner import LogicFlawScanner   # NEW: Logic Flaws Scanner
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -24,7 +25,21 @@ def run_tool(module: str, target: str) -> Dict[str, Any]:
     if not config:
         return {"module": module, "status": "skipped", "data": None}
 
-    cmd = [arg.format(target=target) for arg in config["cmd_base"]]
+    # Handle custom logic_flaws module
+    if module == "logic_flaws":
+        try:
+            scanner = LogicFlawScanner(target)
+            findings = asyncio.run(scanner.run_all_checks())
+            return {
+                "module": module,
+                "status": "completed",
+                "data": findings
+            }
+        except Exception as e:
+            return {"module": module, "status": "error", "data": str(e)}
+
+    # Original modules (subdomains, ports, nuclei, etc.)
+    cmd = [arg.format(target=target) for arg in config.get("cmd_base", [])]
     timeout = config.get("timeout", 120)
 
     try:
@@ -89,7 +104,6 @@ def run_tool(module: str, target: str) -> Dict[str, Any]:
                 return {"module": module, "status": "completed", "data": {}}
 
         elif module == "dirs":
-            # Real feroxbuster integration
             try:
                 ferox_cmd = [
                     "feroxbuster", "-u", f"http://{target}", "--silent",
@@ -123,6 +137,7 @@ def run_real_scan(target: str, modules: List[str]) -> Dict[str, Any]:
     }
 
     nuclei_findings = []
+    logic_findings = []
     all_module_results = {}
 
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -137,6 +152,8 @@ def run_real_scan(target: str, modules: List[str]) -> Dict[str, Any]:
 
                 if mod == "nuclei" and isinstance(mod_result.get("data"), list):
                     nuclei_findings.extend(mod_result["data"])
+                if mod == "logic_flaws" and isinstance(mod_result.get("data"), list):
+                    logic_findings.extend(mod_result["data"])
             except Exception as e:
                 result["progress"][mod] = "failed"
                 all_module_results[mod] = {"error": str(e)}
@@ -148,16 +165,18 @@ def run_real_scan(target: str, modules: List[str]) -> Dict[str, Any]:
     result["tech"] = all_module_results.get("tech", {}).get("tech") if "tech" in all_module_results else []
     result["headers"] = all_module_results.get("headers", {})
     result["directories"] = all_module_results.get("dirs")
+    result["logic_flaws"] = logic_findings   # NEW: Store logic flaws separately
 
-    # Improved risk score
+    # Improved risk score (includes logic flaws impact)
     cvss_sum = sum(f.get("cvss_score", 0) for f in nuclei_findings)
-    num_findings = len(nuclei_findings)
+    num_findings = len(nuclei_findings) + len(logic_findings)
     risk_score = round(min(9.9, 1.8 + (num_findings * 0.9) + (cvss_sum / 7.5)), 1)
 
     return {
         "risk_score": risk_score,
         "data": result,
-        "nuclei_findings": nuclei_findings
+        "nuclei_findings": nuclei_findings,
+        "logic_findings": logic_findings
     }
 
 
@@ -188,7 +207,6 @@ def run_full_scan_task(self, scan_id: int):
         try:
             pdf_bytes = generate_pdf_report(scan)
             scan.result_data["pdf_generated"] = True
-            # Optionally save PDF to disk or store path here
         except Exception as pdf_err:
             scan.result_data["pdf_error"] = str(pdf_err)
 
@@ -200,102 +218,11 @@ def run_full_scan_task(self, scan_id: int):
             "risk_score": scan.risk_score
         }
 
-    except Exception as exc:
+    except Exception as e:
         if scan:
             scan.status = "failed"
-            scan.result_data = {"error": str(exc)}
+            scan.result_data = {"error": str(e)}
             db.commit()
-        raise self.retry(exc=exc) from exc
+        return {"status": "error", "message": str(e)}
     finally:
         db.close()
-
-
-# ─── Pydantic Validators (SafeScanCreate) ───────────────────────────────────
-class SafeScanCreate(schemas.ScanCreate):
-    @field_validator("target")
-    @classmethod
-    def validate_target(cls, v: str):
-        v = v.strip().lower()
-        if not v or len(v) > 255:
-            raise ValueError("Target must be between 1 and 255 characters")
-        forbidden = [";", "&", "|", "`", "$", "<", ">", "{", "}", "(", ")"]
-        if any(c in v for c in forbidden):
-            raise ValueError("Invalid characters detected in target")
-        return v
-
-    @field_validator("modules")
-    @classmethod
-    def validate_modules(cls, v: List[str]):
-        if not v:
-            raise ValueError("At least one module must be selected")
-        invalid = [m for m in v if m.lower() not in ALLOWED_MODULES]
-        if invalid:
-            raise ValueError(f"Invalid modules: {invalid}. Allowed: {sorted(ALLOWED_MODULES)}")
-        return [m.lower() for m in v]
-
-
-# ─── API Endpoints ──────────────────────────────────────────────────────────
-@router.post("/", response_model=schemas.ScanOut, status_code=201)
-def create_scan(
-    scan_in: SafeScanCreate,
-    current_user=Depends(dependencies.get_current_user),  # Adjust if your dependency name differs
-    db: Session = Depends(dependencies.get_db)
-):
-    # Asset ownership check
-    asset = db.query(models.Asset).filter(
-        models.Asset.target == scan_in.target,
-        models.Asset.user_id == current_user.id
-    ).first()
-
-    if not asset:
-        raise HTTPException(
-            status_code=403,
-            detail="You can only scan assets you own"
-        )
-
-    db_scan = models.Scan(
-        user_id=current_user.id,
-        target=scan_in.target,
-        modules_used=scan_in.modules,
-        status="queued",
-        risk_score=0.0,
-        result_data={}
-    )
-    db.add(db_scan)
-    db.commit()
-    db.refresh(db_scan)
-
-    # Queue Celery task instead of threading
-    run_full_scan_task.delay(db_scan.id)
-
-    return db_scan
-
-
-@router.get("/{scan_id}", response_model=schemas.ScanOut)
-def get_scan(scan_id: int, db: Session = Depends(dependencies.get_db), current_user=Depends(dependencies.get_current_user)):
-    scan = db.query(models.Scan).filter(models.Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
-    if scan.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    return scan
-
-
-@router.get("/{scan_id}/progress")
-def get_scan_progress(scan_id: int, db: Session = Depends(dependencies.get_db), current_user=Depends(dependencies.get_current_user)):
-    scan = db.query(models.Scan).filter(models.Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
-    if scan.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    progress = scan.result_data.get("progress", {}) if isinstance(scan.result_data, dict) else {}
-    return {
-        "scan_id": scan_id,
-        "status": scan.status,
-        "progress": progress,
-        "risk_score": scan.risk_score
-    }
-
-
-# Add more endpoints (list scans, delete, etc.)
