@@ -3,8 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routers import auth, users, scans, assets
 from .celery_app import celery_app   # noqa: F401
-# Optional: Pre-warm nuclei templates on startup (in Docker)
+
+# Optional: Pre-warm nuclei templates on startup
 import subprocess
+
+app = FastAPI(
+    title="Vulnora API",
+    description="Vulnora – Built by Cybersecurity Researcher"
+)
+
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -12,13 +19,8 @@ async def startup_event():
         print("Nuclei templates updated successfully")
     except:
         pass  # Non-critical
-        
-Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    title="Vulnora API",
-    description="Vulnora – Built by Cybersecurity Researcher"
-)
+Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
