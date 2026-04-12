@@ -11,7 +11,7 @@ COMPLIANCE_MAP = {
 }
 
 ALLOWED_MODULES = {
-    "subdomains", "ports", "nuclei", "headers", "tech", "dirs", "screenshot"
+    "subdomains", "ports", "nuclei", "headers", "tech", "dirs", "screenshot", "logic_flaws"
 }
 
 # Tool configuration for easy extension
@@ -28,4 +28,5 @@ TOOL_CONFIG = {
         ]
     },
     "httpx": {"timeout": 40, "cmd_base": ["httpx", "-u", "{target}", "-json", "-tech-detect", "-silent"]},
+    "logic_flaws": {"timeout": 300, "custom": True}  # Custom Python logic scanner
 }
