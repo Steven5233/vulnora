@@ -6,7 +6,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter
 from sqlalchemy.orm import Session
 
 from .. import schemas, models, dependencies
@@ -14,22 +14,24 @@ from ..database import SessionLocal
 from ..constants import COMPLIANCE_MAP, ALLOWED_MODULES, TOOL_CONFIG
 from ..celery_app import celery_app
 from .report import generate_pdf_report
-from ..logic_scanner import LogicFlawScanner   # NEW: Logic Flaws Scanner
+from ..logic_scanner import LogicFlawScanner   # Logic Flaws Scanner
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
 
-def run_tool(module: str, target: str) -> Dict[str, Any]:
+def run_tool(module: str, target: str, selected_logic_checks: List[str] = None) -> Dict[str, Any]:
     """Execute a single scanning module with timeout and error handling"""
     config = TOOL_CONFIG.get(module, {})
     if not config:
         return {"module": module, "status": "skipped", "data": None}
 
-    # Handle custom logic_flaws module
+    # === CUSTOM LOGIC FLAWS MODULE ===
     if module == "logic_flaws":
         try:
-            scanner = LogicFlawScanner(target)
-            findings = asyncio.run(scanner.run_all_checks())
+            # If user selected specific checks, use them; otherwise run all
+            checks_to_run = selected_logic_checks or list(LogicFlawScanner.LOGIC_CHECKS.keys())
+            scanner = LogicFlawScanner(target, selected_checks=checks_to_run)
+            findings = asyncio.run(scanner.run_selected_checks())
             return {
                 "module": module,
                 "status": "completed",
@@ -38,7 +40,7 @@ def run_tool(module: str, target: str) -> Dict[str, Any]:
         except Exception as e:
             return {"module": module, "status": "error", "data": str(e)}
 
-    # Original modules (subdomains, ports, nuclei, etc.)
+    # === ORIGINAL MODULES (subdomains, ports, nuclei, etc.) ===
     cmd = [arg.format(target=target) for arg in config.get("cmd_base", [])]
     timeout = config.get("timeout", 120)
 
@@ -129,7 +131,7 @@ def run_tool(module: str, target: str) -> Dict[str, Any]:
         return {"module": module, "status": "error", "data": str(e)}
 
 
-def run_real_scan(target: str, modules: List[str]) -> Dict[str, Any]:
+def run_real_scan(target: str, modules: List[str], selected_logic_checks: List[str] = None) -> Dict[str, Any]:
     """Parallel real scanning with per-module progress"""
     result: Dict[str, Any] = {
         "summary": f"Vulnora Scan – {target} – {time.strftime('%Y-%m-%d %H:%M UTC')}",
@@ -140,8 +142,8 @@ def run_real_scan(target: str, modules: List[str]) -> Dict[str, Any]:
     logic_findings = []
     all_module_results = {}
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        future_to_module = {executor.submit(run_tool, mod, target): mod for mod in modules}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_module = {executor.submit(run_tool, mod, target, selected_logic_checks): mod for mod in modules}
 
         for future in as_completed(future_to_module):
             mod = future_to_module[future]
@@ -165,9 +167,9 @@ def run_real_scan(target: str, modules: List[str]) -> Dict[str, Any]:
     result["tech"] = all_module_results.get("tech", {}).get("tech") if "tech" in all_module_results else []
     result["headers"] = all_module_results.get("headers", {})
     result["directories"] = all_module_results.get("dirs")
-    result["logic_flaws"] = logic_findings   # NEW: Store logic flaws separately
+    result["logic_flaws"] = logic_findings   # Store logic findings
 
-    # Improved risk score (includes logic flaws impact)
+    # Improved risk score (includes logic flaws)
     cvss_sum = sum(f.get("cvss_score", 0) for f in nuclei_findings)
     num_findings = len(nuclei_findings) + len(logic_findings)
     risk_score = round(min(9.9, 1.8 + (num_findings * 0.9) + (cvss_sum / 7.5)), 1)
@@ -182,7 +184,7 @@ def run_real_scan(target: str, modules: List[str]) -> Dict[str, Any]:
 
 # ─── Celery Background Task ─────────────────────────────────────────────────
 @celery_app.task(bind=True, name="scan.run_full_scan", max_retries=2, default_retry_delay=60)
-def run_full_scan_task(self, scan_id: int):
+def run_full_scan_task(self, scan_id: int, selected_logic_checks: List[str] = None):
     """Reliable background scan task with Celery"""
     db = SessionLocal()
     scan = None
@@ -195,8 +197,8 @@ def run_full_scan_task(self, scan_id: int):
         scan.result_data = {"progress": {mod: "pending" for mod in scan.modules_used}}
         db.commit()
 
-        # Run parallel scan
-        tool_result = run_real_scan(scan.target, scan.modules_used)
+        # Run parallel scan (pass selected logic checks if any)
+        tool_result = run_real_scan(scan.target, scan.modules_used, selected_logic_checks)
 
         # Update scan with results
         scan.risk_score = tool_result.get("risk_score", 0.0)
