@@ -38,14 +38,20 @@ class AssetOut(AssetBase):
     class Config:
         from_attributes = True
 
-# Available logic flaw checks (must match keys in logic_scanner.py)
+# Available logic flaw checks (updated with all new ones)
 LOGIC_CHECK_OPTIONS = [
     "client_side_trust",
     "idor",
     "bfla",
     "workflow_bypass",
     "race_condition",
-    "price_manipulation"
+    "price_manipulation",
+    "multi_account_manipulation",
+    "mass_assignment",
+    "http_parameter_pollution",
+    "forced_state_transition",
+    "coupon_stacking",
+    "balance_manipulation"
 ]
 
 class ScanCreate(BaseModel):
@@ -54,9 +60,6 @@ class ScanCreate(BaseModel):
         "subdomains", "ports", "nuclei", "headers", "tech", 
         "dirs", "screenshot", "logic_flaws"
     ]
-    # New: Optional list of specific logic checks.
-    # If "logic_flaws" is selected and this is provided, only those checks run.
-    # If empty or None → run all logic checks.
     selected_logic_checks: Optional[List[str]] = None
 
 class ScanOut(BaseModel):
