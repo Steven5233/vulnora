@@ -28,5 +28,20 @@ TOOL_CONFIG = {
         ]
     },
     "httpx": {"timeout": 40, "cmd_base": ["httpx", "-u", "{target}", "-json", "-tech-detect", "-silent"]},
+
+    # === NEW: Real headers & tech (both use httpx - now they will actually run) ===
+    "headers": {"timeout": 40, "cmd_base": ["httpx", "-u", "{target}", "-json", "-headers", "-silent"]},
+    "tech": {"timeout": 40, "cmd_base": ["httpx", "-u", "{target}", "-json", "-tech-detect", "-silent"]},
+
+    # === NEW: Real feroxbuster for directories (now it will actually run) ===
+    "dirs": {
+        "timeout": 180,
+        "cmd_base": [
+            "feroxbuster", "-u", "http://{target}", "--silent",
+            "-w", "/usr/share/wordlists/dirb/common.txt",
+            "-t", "50", "--no-state", "--timeout", "8000"
+        ]
+    },
+
     "logic_flaws": {"timeout": 300, "custom": True}  # Custom Python logic scanner
 }
