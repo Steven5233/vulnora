@@ -152,17 +152,21 @@ def run_full_scan_task(self, scan_id: int, selected_logic_checks: List[str] = No
 
         tool_result = run_real_scan(scan.target, scan.modules_used, selected_logic_checks)
 
+        # Update scan with results
         scan.risk_score = tool_result.get("risk_score", 0.0)
         scan.result_data = tool_result.get("data", {})
         scan.status = "completed"
-
-        try:
-            generate_pdf_report(scan)
-            scan.result_data["pdf_generated"] = True
-        except Exception as pdf_err:
-            scan.result_data["pdf_error"] = str(pdf_err)
-
         db.commit()
+
+        # Generate PDF report (now includes all logic findings)
+        try:
+            pdf_bytes = generate_pdf_report(scan)
+            # Optional: store PDF if your Scan model supports it (models.py has no pdf_report column by default)
+            # scan.pdf_report = pdf_bytes
+            db.commit()
+        except Exception as pdf_err:
+            print(f"PDF generation warning for scan {scan_id}: {pdf_err}")
+
         return {"status": "completed", "scan_id": scan_id, "risk_score": scan.risk_score}
 
     except Exception as e:
@@ -175,48 +179,55 @@ def run_full_scan_task(self, scan_id: int, selected_logic_checks: List[str] = No
         db.close()
 
 
-# ─── FASTAPI ENDPOINTS (this was missing) ─────────────────────────────────
-from ..dependencies import get_db, get_current_active_user
-
+# ====================== FASTAPI ENDPOINTS ======================
 @router.post("/", response_model=schemas.ScanOut)
 def create_scan(
     scan_in: schemas.ScanCreate,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_active_user)
+    db: Session = Depends(dependencies.get_db),
+    current_user = Depends(dependencies.get_current_user)
 ):
-    """Create a new scan and queue it for background execution"""
-    scan = models.Scan(
+    # Validate modules
+    for mod in scan_in.modules:
+        if mod not in ALLOWED_MODULES:
+            raise HTTPException(status_code=400, detail=f"Invalid module: {mod}")
+
+    # Create scan record
+    db_scan = models.Scan(
+        user_id=current_user.id,
         target=scan_in.target,
         modules_used=scan_in.modules,
-        user_id=current_user.id,
         status="pending"
     )
-    db.add(scan)
+    db.add(db_scan)
     db.commit()
-    db.refresh(scan)
+    db.refresh(db_scan)
 
-    # Queue Celery task
-    run_full_scan_task.delay(scan.id, scan_in.selected_logic_checks)
+    # Queue the Celery task
+    run_full_scan_task.delay(db_scan.id, scan_in.selected_logic_checks)
 
-    return scan
+    return db_scan
 
 
 @router.get("/", response_model=List[schemas.ScanOut])
 def list_scans(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_active_user)
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(dependencies.get_db),
+    current_user = Depends(dependencies.get_current_user)
 ):
-    """List all scans for the current user"""
-    return db.query(models.Scan).filter(models.Scan.user_id == current_user.id).all()
+    scans = db.query(models.Scan)\
+              .filter(models.Scan.user_id == current_user.id)\
+              .order_by(models.Scan.time.desc())\
+              .offset(skip).limit(limit).all()
+    return scans
 
 
 @router.get("/{scan_id}", response_model=schemas.ScanOut)
 def get_scan(
     scan_id: int,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_active_user)
+    db: Session = Depends(dependencies.get_db),
+    current_user = Depends(dependencies.get_current_user)
 ):
-    """Get a specific scan"""
     scan = db.query(models.Scan).filter(
         models.Scan.id == scan_id,
         models.Scan.user_id == current_user.id
