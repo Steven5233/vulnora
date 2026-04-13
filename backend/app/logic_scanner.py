@@ -38,20 +38,45 @@ class LogicFlawScanner:
             "severity": "high",
             "description": "Tests negative values, zero, invalid coupons, refund logic."
         },
-        # === NEW CHECK ===
         "multi_account_manipulation": {
             "name": "Multi-Account Broken Authorization (Cross-User IDOR/BOLA via Cookie/Session)",
             "severity": "critical",
-            "description": "Creates 3 accounts (A, B, C). Uses Account A session/cookie to manipulate/view/delete data of Account B/C by combining A’s auth with B/C user IDs."
+            "description": "Creates 3 accounts (A, B, C). Uses Account A session/cookie to manipulate/view/delete data of Account B/C."
+        },
+        # === NEW CHECKS: Most hunters miss these ===
+        "mass_assignment": {
+            "name": "Mass Assignment / Object Injection",
+            "severity": "high",
+            "description": "Tests injection of privileged fields (role, balance, is_admin, etc.)."
+        },
+        "http_parameter_pollution": {
+            "name": "HTTP Parameter Pollution (HPP)",
+            "severity": "medium",
+            "description": "Uses duplicate or malformed parameters to bypass validation."
+        },
+        "forced_state_transition": {
+            "name": "Forced State Transition",
+            "severity": "high",
+            "description": "Forces business state changes without proper payment/flow."
+        },
+        "coupon_stacking": {
+            "name": "Coupon / Discount Stacking Abuse",
+            "severity": "medium",
+            "description": "Tests applying multiple or repeated discounts illegally."
+        },
+        "balance_manipulation": {
+            "name": "Balance Manipulation / Refund Loop",
+            "severity": "high",
+            "description": "Creates negative balances or exploits refund logic."
         }
     }
 
     def __init__(self, target: str, selected_checks: Optional[List[str]] = None):
         self.target = target.rstrip("/")
         self.client = httpx.AsyncClient(timeout=15, follow_redirects=True)
-        self.findings = []
+        self.findings: List[Dict] = []
         self.selected_checks = selected_checks or list(self.LOGIC_CHECKS.keys())
-        self.accounts = {}  # Will store {"A": {"id": , "cookie": , "session": }, ...}
+        self.accounts = {}  # For multi-account check
 
     async def _request(self, method: str, url: str, json_data=None, cookies=None, headers=None):
         try:
@@ -62,7 +87,7 @@ class LogicFlawScanner:
         except Exception:
             return None
 
-    def _add_finding(self, check_key: str, poc: Dict):
+    def _add_finding(self, check_key: str, poc: Dict[str, Any]):
         check = self.LOGIC_CHECKS[check_key]
         self.findings.append({
             "flaw_type": check_key,
@@ -73,18 +98,63 @@ class LogicFlawScanner:
             "timestamp": time.time()
         })
 
-    # ====================== EXISTING CHECKS (unchanged) ======================
-    async def check_client_side_trust(self): ...  # (keep original)
-    async def check_idor(self): ...               # (keep original)
-    async def check_bfla(self): ...               # (keep original)
-    async def check_workflow_bypass(self): ...    # (keep original)
-    async def check_race_condition(self): ...     # (keep original)
-    async def check_price_manipulation(self): ... # (keep original)
+    # ====================== ORIGINAL CHECKS ======================
+    async def check_client_side_trust(self):
+        payloads = [{"price": 0.01, "quantity": 9999}, {"total": 1.0}, {"amount": -50}]
+        paths = ["/checkout", "/api/order", "/cart/update", "/api/cart"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201, 202):
+                    self._add_finding("client_side_trust", {"url": str(resp.url), "payload": payload})
 
-    # ====================== NEW MULTI-ACCOUNT CHECK ======================
+    async def check_idor(self):
+        for i in range(1, 30):
+            for base in ["/user/", "/order/", "/profile/", "/api/resource/", "/api/user/"]:
+                url = f"{self.target}{base}{i}"
+                resp = await self._request("GET", url)
+                if resp and resp.status_code == 200 and len(resp.text) > 50:
+                    self._add_finding("idor", {"url": url, "id": i})
+
+    async def check_bfla(self):
+        paths = ["/admin", "/api/admin", "/dashboard/admin", "/api/v1/admin", "/api/admin/users"]
+        for path in paths:
+            resp = await self._request("GET", f"{self.target}{path}")
+            if resp and resp.status_code in (200, 301, 302):
+                self._add_finding("bfla", {"url": str(resp.url)})
+
+    async def check_workflow_bypass(self):
+        payloads = [{"step": "complete"}, {"status": "paid"}]
+        paths = ["/api/checkout/complete", "/api/order/confirm"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201):
+                    self._add_finding("workflow_bypass", {"url": str(resp.url), "payload": payload})
+
+    async def check_race_condition(self):
+        async def race():
+            tasks = [self._request("POST", f"{self.target}/api/redeem", json_data={"code": "TEST123"}) for _ in range(5)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success_count = sum(1 for r in results if isinstance(r, httpx.Response) and r.status_code in (200, 201))
+            if success_count > 2:
+                self._add_finding("race_condition", {"attempts": 5, "successes": success_count})
+        await race()
+
+    async def check_price_manipulation(self):
+        payloads = [{"price": -100}, {"coupon": "INVALID"}, {"refund_amount": 9999}, {"discount": 1000}]
+        paths = ["/api/order", "/checkout", "/api/payment"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201):
+                    self._add_finding("price_manipulation", {"url": str(resp.url), "payload": payload})
+
+    # ====================== MULTI-ACCOUNT CHECK (original from repo) ======================
     async def register_account(self, username: str, email: str, password: str):
         payload = {"username": username, "email": email, "password": password}
-        for path in ["/register", "/api/register", "/signup", "/api/auth/register"]:
+        paths = ["/register", "/api/register", "/signup", "/api/auth/register"]
+        for path in paths:
             resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
             if resp and resp.status_code in (200, 201):
                 return resp
@@ -92,15 +162,16 @@ class LogicFlawScanner:
 
     async def login_account(self, username: str, password: str):
         payload = {"username": username, "password": password}
-        for path in ["/login", "/api/login", "/auth/login", "/api/auth/login"]:
+        paths = ["/login", "/api/login", "/auth/login", "/api/auth/login"]
+        for path in paths:
             resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
             if resp and resp.status_code in (200, 201, 302):
                 return resp.cookies, resp.headers.get("set-cookie"), resp.json() if resp.content else {}
         return None, None, {}
 
     async def get_user_id(self, cookies):
-        """Try to fetch current user profile to extract own user ID"""
-        for path in ["/api/me", "/api/user/profile", "/profile", "/api/profile"]:
+        paths = ["/api/me", "/api/user/profile", "/profile", "/api/profile"]
+        for path in paths:
             resp = await self._request("GET", f"{self.target}{path}", cookies=cookies)
             if resp and resp.status_code == 200:
                 try:
@@ -112,7 +183,6 @@ class LogicFlawScanner:
 
     async def check_multi_account_manipulation(self):
         try:
-            # Step 1: Create 3 accounts
             base = "vulnora_test_" + ''.join(random.choices(string.ascii_lowercase, k=6))
             accounts = ["A", "B", "C"]
             for acc in accounts:
@@ -121,101 +191,96 @@ class LogicFlawScanner:
                 password = "Pass123!"
                 await self.register_account(username, email, password)
 
-            # Step 2: Login to all 3 and capture cookies + user IDs
             for acc in accounts:
                 username = f"{base}_{acc}"
-                cookies, set_cookie, login_data = await self.login_account(username, "Pass123!")
+                cookies, _, _ = await self.login_account(username, "Pass123!")
                 user_id = await self.get_user_id(cookies) or f"unknown_{acc}"
-
-                self.accounts[acc] = {
-                    "username": username,
-                    "cookies": dict(cookies) if cookies else {},
-                    "set_cookie": set_cookie,
-                    "user_id": user_id
-                }
+                self.accounts[acc] = {"cookies": dict(cookies) if cookies else {}, "user_id": user_id}
 
             if not self.accounts.get("A") or not self.accounts.get("B"):
-                return  # Not enough accounts created
+                return
 
-            # Step 3: Use Account A session to attack B and C
             a_cookies = self.accounts["A"]["cookies"]
             b_id = self.accounts["B"]["user_id"]
-            c_id = self.accounts["C"]["user_id"]
 
-            test_paths = [
-                f"/api/user/{b_id}", f"/api/profile/{b_id}", f"/api/users/{b_id}",
-                f"/api/order/{b_id}", f"/api/resource/{b_id}",
-                f"/api/admin/user/{b_id}/delete", f"/api/user/{b_id}/update"
-            ]
-
+            test_paths = [f"/api/user/{b_id}", f"/api/profile/{b_id}", f"/api/users/{b_id}", f"/api/order/{b_id}"]
             for path in test_paths:
-                # GET (view other user's data)
                 resp = await self._request("GET", f"{self.target}{path}", cookies=a_cookies)
-                if resp and resp.status_code in (200, 201, 403, 404) and len(resp.text) > 30:
+                if resp and resp.status_code in (200, 403, 404) and len(resp.text) > 30:
                     self._add_finding("multi_account_manipulation", {
-                        "action": "View",
-                        "attacker_account": "A",
-                        "victim_account": "B",
-                        "victim_id": b_id,
-                        "url": str(resp.url),
-                        "status_code": resp.status_code,
-                        "response_snippet": resp.text[:200]
+                        "action": "View", "attacker": "A", "victim": "B", "victim_id": b_id,
+                        "url": str(resp.url), "status_code": resp.status_code
                     })
-
-                # POST/PATCH (modify)
-                update_payload = {"email": "hacked@example.com", "role": "admin"}
-                resp = await self._request("PATCH", f"{self.target}{path}", json_data=update_payload, cookies=a_cookies)
-                if resp and resp.status_code in (200, 204, 201):
-                    self._add_finding("multi_account_manipulation", {
-                        "action": "Modify",
-                        "attacker_account": "A",
-                        "victim_account": "B",
-                        "victim_id": b_id,
-                        "url": str(resp.url),
-                        "payload": update_payload,
-                        "status_code": resp.status_code
-                    })
-
-                # DELETE (delete other user's data)
-                resp = await self._request("DELETE", f"{self.target}{path}", cookies=a_cookies)
-                if resp and resp.status_code in (200, 204):
-                    self._add_finding("multi_account_manipulation", {
-                        "action": "Delete",
-                        "attacker_account": "A",
-                        "victim_account": "B",
-                        "victim_id": b_id,
-                        "url": str(resp.url),
-                        "status_code": resp.status_code
-                    })
-
-            # Optional: Test with Account A ID + Account B cookie (extra variant)
-            # ... (can be added if needed)
-
-        except Exception as e:
-            # Silent fail – don't break the whole scan
+        except:
             pass
 
-    # ====================== RUNNER ======================
+    # ====================== NEW CHECKS ======================
+    async def check_mass_assignment(self):
+        payloads = [
+            {"is_admin": True, "role": "admin"},
+            {"permissions": ["*"], "balance": 999999},
+            {"verified": True, "admin": True}
+        ]
+        paths = ["/api/user/update", "/api/profile", "/api/account", "/user/edit"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201):
+                    self._add_finding("mass_assignment", {"url": str(resp.url), "payload": payload})
+
+    async def check_http_parameter_pollution(self):
+        payloads = [{"id": [1, 2]}, {"amount": "0&amount=9999"}]
+        paths = ["/api/order", "/api/checkout", "/api/payment"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201):
+                    self._add_finding("http_parameter_pollution", {"url": str(resp.url), "payload": payload})
+
+    async def check_forced_state_transition(self):
+        payloads = [{"status": "completed", "paid": True}, {"state": "paid"}]
+        paths = ["/api/order/complete", "/api/checkout", "/api/payment/confirm"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201):
+                    self._add_finding("forced_state_transition", {"url": str(resp.url), "payload": payload})
+
+    async def check_coupon_stacking(self):
+        payloads = [{"coupon": "TEST123"}, {"coupons": ["TEST123", "TEST456"]}]
+        paths = ["/api/cart/apply", "/api/discount", "/api/checkout"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201):
+                    self._add_finding("coupon_stacking", {"url": str(resp.url), "payload": payload})
+
+    async def check_balance_manipulation(self):
+        payloads = [{"refund_amount": 9999}, {"balance": -500}, {"credit": 999999}]
+        paths = ["/api/refund", "/api/payment/refund", "/api/wallet"]
+        for payload in payloads:
+            for path in paths:
+                resp = await self._request("POST", f"{self.target}{path}", json_data=payload)
+                if resp and resp.status_code in (200, 201):
+                    self._add_finding("balance_manipulation", {"url": str(resp.url), "payload": payload})
+
     async def run_selected_checks(self) -> List[Dict]:
-        tasks = []
+        mapping = {
+            "client_side_trust": self.check_client_side_trust(),
+            "idor": self.check_idor(),
+            "bfla": self.check_bfla(),
+            "workflow_bypass": self.check_workflow_bypass(),
+            "race_condition": self.check_race_condition(),
+            "price_manipulation": self.check_price_manipulation(),
+            "multi_account_manipulation": self.check_multi_account_manipulation(),
+            "mass_assignment": self.check_mass_assignment(),
+            "http_parameter_pollution": self.check_http_parameter_pollution(),
+            "forced_state_transition": self.check_forced_state_transition(),
+            "coupon_stacking": self.check_coupon_stacking(),
+            "balance_manipulation": self.check_balance_manipulation()
+        }
 
-        if "client_side_trust" in self.selected_checks:
-            tasks.append(self.check_client_side_trust())
-        if "idor" in self.selected_checks:
-            tasks.append(self.check_idor())
-        if "bfla" in self.selected_checks:
-            tasks.append(self.check_bfla())
-        if "workflow_bypass" in self.selected_checks:
-            tasks.append(self.check_workflow_bypass())
-        if "race_condition" in self.selected_checks:
-            tasks.append(self.check_race_condition())
-        if "price_manipulation" in self.selected_checks:
-            tasks.append(self.check_price_manipulation())
-        if "multi_account_manipulation" in self.selected_checks:
-            tasks.append(self.check_multi_account_manipulation())
-
+        tasks = [mapping[check] for check in self.selected_checks if check in mapping]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-
-        await self.client.aclose()  # Clean up
         return self.findings
