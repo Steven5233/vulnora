@@ -1,3 +1,4 @@
+
 # Vulnora
 
 [![License](https://img.shields.io/github/license/Steven5233/vulnora)](LICENSE)
@@ -7,7 +8,7 @@
 [![Celery](https://img.shields.io/badge/Celery-5.4+-orange)](backend/requirements.txt)
 ![GitHub stars](https://img.shields.io/github/stars/Steven5233/vulnora?style=social)
 
-**An open-source vulnerability management platform that bridges technical security findings with global compliance frameworks (NIST, ISO 27001, GDPR, PCI DSS) and now includes real Business Logic Flaws detection for bug bounty hunting.**
+**An open-source vulnerability management platform that bridges technical security findings with global compliance frameworks (NIST, ISO 27001, GDPR, PCI DSS) and now includes a powerful real-time Business Logic Flaws scanner for serious bug bounty hunting.**
 
 A modern full-stack penetration testing and vulnerability management platform that performs **real vulnerability scanning** using industry-standard tools and automatically maps findings to major compliance standards.
 
@@ -21,13 +22,13 @@ A modern full-stack penetration testing and vulnerability management platform th
   - **Nmap** — port & service discovery
   - **httpx** — tech detection & headers
   - **Feroxbuster** — fast directory brute-forcing
-  - **Logic Flaws Scanner** — **New!** Business logic vulnerability detection (IDOR/BOLA, price manipulation, race conditions, workflow bypass, privilege escalation, etc.)
+  - **Logic Flaws Scanner** — **Advanced** business logic vulnerability detection with real HTTP requests
 
-- **High-performance parallel scanning** using `ThreadPoolExecutor`
-- **Reliable background processing** with **Celery + Redis** (queued tasks, retries, progress tracking)
+- High-performance **parallel scanning** using `ThreadPoolExecutor`
+- Reliable **background processing** with **Celery + Redis** (queued tasks, retries, progress tracking)
 - **Live per-module progress** via polling
 - **Selective Logic Flaw Testing** — Choose specific logic checks or run all
-- Professional **PDF reports** with risk scoring and automated compliance mapping
+- Professional **PDF reports** with risk scoring, detailed PoCs for every logic flaw, and automated compliance mapping
 - Asset inventory with strict ownership enforcement
 - Role-based access control (RBAC)
 - Strong input validation & security hardening
@@ -37,14 +38,27 @@ A modern full-stack penetration testing and vulnerability management platform th
 **Compliance Frameworks Supported**  
 ISO 27001 • NIST CSF • GDPR • PCI DSS • SOC 2 • CIS Controls
 
-**New: Business Logic Flaws Module**  
-Detects high-impact logic vulnerabilities that traditional scanners miss:
+### Advanced Business Logic Flaws Module (Most Hunters Miss These)
+
+The enhanced `logic_flaws` module performs **real HTTP requests** to detect high-impact business logic issues that traditional scanners completely miss. It now includes 12 powerful checks:
+
+**Core Checks:**
 - Client-side trust / Price & Quantity Manipulation
 - IDOR / Broken Object Level Authorization (BOLA)
-- Broken Function Level Authorization (BFLA)
+- Broken Function Level Authorization (BFLA / Privilege Escalation)
 - Workflow & State Machine Bypass
 - Race Conditions
-- Discount, Refund & Promotion Abuse
+- Price, Discount & Refund Abuse
+- Multi-Account Manipulation (cross-user attacks via session/cookie)
+
+**New Powerful Checks:**
+- **Mass Assignment** — Injecting privileged fields (role, balance, is_admin, etc.)
+- **HTTP Parameter Pollution (HPP)** — Duplicate or malformed parameters to bypass filters
+- **Forced State Transition** — Jumping straight to “paid/completed” states
+- **Coupon / Discount Stacking Abuse**
+- **Balance Manipulation / Refund Loop** — Creating negative balances or exploiting refunds
+
+All checks return **detailed Proof-of-Concept (PoC)** payloads that appear directly in the results **and** the generated PDF report.
 
 ---
 
@@ -124,17 +138,17 @@ celery -A app.celery_app worker --loglevel=info --concurrency=4
 4. Select modules (including `logic_flaws`)
 5. If `logic_flaws` is selected, choose specific checks or leave empty to run **all**
 6. Monitor **live progress**
-7. View results — Technical findings + **Business Logic Flaws** with PoCs
-8. Download professional **PDF report** with compliance mapping
+7. View results — Technical findings + **Business Logic Flaws** with full PoCs
+8. Download professional **PDF report** (now fully includes all logic findings with PoCs and compliance mapping)
 
 ---
 
 ## New: Logic Flaws Detection
 
-The new `logic_flaws` module performs **real HTTP requests** to detect business logic issues that automated scanners usually miss. It supports:
-- Full logic scan (all checks)
-- Selective testing (e.g., only price manipulation + IDOR)
-- Safe rate-limited checks with detailed PoCs
+The `logic_flaws` module performs **real HTTP requests** to detect business logic issues that automated scanners usually miss. It supports:
+- Full logic scan (all 12 checks)
+- Selective testing (e.g., only Mass Assignment + Forced State Transition)
+- Safe rate-limited checks with detailed PoCs that appear in the PDF report
 
 **Important**: Use only on authorized targets. Logic flaw testing can trigger unexpected behavior.
 
@@ -144,9 +158,9 @@ The new `logic_flaws` module performs **real HTTP requests** to detect business 
 
 - **Backend**: FastAPI + SQLAlchemy + JWT + Celery + Redis
 - **Scanning**: Parallel execution with timeouts
-- **Logic Scanner**: Async `httpx` with heuristic checks for common logic flaws
+- **Logic Scanner**: Async `httpx` with real request testing
 - **Frontend**: Streamlit with dark cyber theme + real-time polling
-- **Reports**: FPDF with compliance insights
+- **Reports**: Enhanced FPDF with full logic flaw section
 - **Deployment**: Docker Compose (Redis + dedicated Celery worker)
 
 ---
@@ -157,12 +171,12 @@ The new `logic_flaws` module performs **real HTTP requests** to detect business 
 vulnora/
 ├── backend/
 │   ├── app/
-│   │   ├── logic_scanner.py      # New: Business logic flaws detection
+│   │   ├── logic_scanner.py      # Expanded: 12 business logic checks
 │   │   ├── routers/scans.py      # Scan endpoints + logic integration
 │   │   ├── constants.py          # Compliance map & tool config
 │   │   ├── schemas.py            # Updated with selected_logic_checks
 │   │   ├── main.py
-│   │   └── report.py
+│   │   └── report.py             # Enhanced PDF with full logic findings
 ├── frontend/
 │   └── app.py                    # Updated with logic flaw UI
 ├── docker-compose.yml
