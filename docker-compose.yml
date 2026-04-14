@@ -10,23 +10,21 @@ services:
     volumes:
       - redis_data:/data
 
-  db:
-    # ... your existing DB service (if any) ...
-
   zap:
     image: ghcr.io/zaproxy/zaproxy:stable
     container_name: vulnora-zap
     restart: unless-stopped
     ports:
       - "8080:8080"
+      - "8090:8090"
     command: >
       zap.sh -daemon -port 8080 -host 0.0.0.0 
       -config api.addrs.*.allowed=.* 
-      -config api.key=
+      -config api.key= 
+      -config proxy.port=8090 
+      -config proxy.address=0.0.0.0
     networks:
       - vulnora-net
-    depends_on:
-      - backend
 
   backend:
     build: ./backend
