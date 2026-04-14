@@ -1,4 +1,3 @@
-# backend/app/routers/zap.py
 import httpx
 import json
 from typing import Dict, Any, Optional
@@ -26,7 +25,6 @@ async def call_zap(endpoint: str, method: str = "GET", params: Optional[Dict] = 
 
 @router.get("/status")
 async def zap_status():
-    """Check if ZAP is running and proxy is ready"""
     try:
         data = await call_zap("/JSON/core/view/version/")
         return {
@@ -40,19 +38,16 @@ async def zap_status():
 
 @router.post("/context/create")
 async def create_context(context_name: str = "Vulnora_Default"):
-    """Create a new ZAP context for isolation"""
     await call_zap("/JSON/context/action/newContext/", params={"contextName": context_name})
     return {"status": "success", "context": context_name}
 
 @router.get("/sites")
 async def get_sites():
-    """Get discovered sites (Sites Tree)"""
     data = await call_zap("/JSON/core/view/sites/")
     return data.get("sites", [])
 
 @router.get("/history")
 async def get_history(baseurl: Optional[str] = None, start: int = 0, count: int = 100):
-    """Get HTTP history (Proxy tab equivalent)"""
     params = {"start": start, "count": count}
     if baseurl:
         params["baseurl"] = baseurl
@@ -61,14 +56,6 @@ async def get_history(baseurl: Optional[str] = None, start: int = 0, count: int 
 
 @router.post("/repeater/send")
 async def send_repeater_request(request_data: Dict[str, Any]):
-    """
-    Repeater: Send custom/modified request
-    Expected body:
-    {
-      "request": "GET /api/test HTTP/1.1\r\nHost: example.com\r\n...",
-      "followRedirects": true
-    }
-    """
     try:
         result = await call_zap(
             "/JSON/core/action/sendRequest/",
@@ -80,14 +67,11 @@ async def send_repeater_request(request_data: Dict[str, Any]):
 
 @router.post("/cookie/set")
 async def set_cookie(name: str, value: str, domain: str):
-    """Set cookie for authenticated sessions"""
     await call_zap("/JSON/core/action/addSessionCookie/", params={"name": name, "value": value, "domain": domain})
     return {"status": "cookie set"}
 
 @router.post("/jwt/set")
 async def set_jwt(jwt_token: str):
-    """Add JWT to session (via replacer or header)"""
-    # Simple way: use replacer rule for Authorization header
     await call_zap("/JSON/replacer/action/addRule/", params={
         "description": "JWT Auth",
         "enabled": "true",
@@ -104,6 +88,11 @@ async def get_breakpoints():
 
 @router.post("/break/set")
 async def set_breakpoint(state: str = "on", scope: str = "http-all"):
-    """Turn breakpoint on/off"""
     await call_zap("/JSON/break/action/break/", params={"type": scope, "state": state})
     return {"status": f"Breakpoint set to {state}"}
+
+@router.get("/alerts")
+async def get_alerts(baseurl: Optional[str] = None):
+    params = {"baseurl": baseurl} if baseurl else {}
+    data = await call_zap("/JSON/core/view/alerts/", params=params)
+    return data.get("alerts", [])
