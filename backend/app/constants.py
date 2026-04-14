@@ -11,7 +11,7 @@ COMPLIANCE_MAP = {
 }
 
 ALLOWED_MODULES = {
-    "subdomains", "ports", "nuclei", "headers", "tech", "dirs", "screenshot", "logic_flaws"
+    "subdomains", "ports", "nuclei", "headers", "tech", "dirs", "screenshot", "logic_flaws", "zap"   # ← NEW ZAP
 }
 
 # Tool configuration for easy extension
@@ -29,11 +29,9 @@ TOOL_CONFIG = {
     },
     "httpx": {"timeout": 40, "cmd_base": ["httpx", "-u", "{target}", "-json", "-tech-detect", "-silent"]},
 
-    # === NEW: Real headers & tech (both use httpx - now they will actually run) ===
     "headers": {"timeout": 40, "cmd_base": ["httpx", "-u", "{target}", "-json", "-headers", "-silent"]},
     "tech": {"timeout": 40, "cmd_base": ["httpx", "-u", "{target}", "-json", "-tech-detect", "-silent"]},
 
-    # === NEW: Real feroxbuster for directories (now it will actually run) ===
     "dirs": {
         "timeout": 180,
         "cmd_base": [
@@ -43,5 +41,6 @@ TOOL_CONFIG = {
         ]
     },
 
-    "logic_flaws": {"timeout": 300, "custom": True}  # Custom Python logic scanner
+    "logic_flaws": {"timeout": 300, "custom": True},
+    "zap": {"timeout": 600, "custom": True}   # ← NEW OWASP ZAP
 }
