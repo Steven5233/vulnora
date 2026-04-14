@@ -10,41 +10,24 @@ services:
     volumes:
       - redis_data:/data
 
-  backend:
-    build: ./backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    ports:
-      - "8000:8000"
-    depends_on:
-      - db
-      - redis
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-    # ... your existing volumes, env_file, etc.
+  db:
+    # ... your existing DB service (if any) ...
 
-  celery-worker:
-    build: ./backend
-    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
-    depends_on:
-      - redis
-      - backend
-    environment:
-      - REDIS_URL=redis://redis:6379/0
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: vulnora-zap
     restart: unless-stopped
-
-  # Optional: Monitoring UI
-  flower:
-    build: ./backend
-    command: celery -A app.celery_app flower --port=5555
     ports:
-      - "5555:5555"
+      - "8080:8080"
+    command: >
+      zap.sh -daemon -port 8080 -host 0.0.0.0 
+      -config api.addrs.*.allowed=.* 
+      -config api.key=
+    networks:
+      - vulnora-net
     depends_on:
-      - redis
-    environment:
-      - REDIS_URL=redis://redis:6379/0
+      - backend
 
-volumes:
-  redis_data:
   backend:
     build: ./backend
     container_name: vulnora-backend
@@ -54,6 +37,21 @@ volumes:
       - ./backend/.env
     volumes:
       - ./backend/data:/app/data
+    restart: unless-stopped
+    networks:
+      - vulnora-net
+    depends_on:
+      - redis
+      - zap
+
+  celery-worker:
+    build: ./backend
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
+    depends_on:
+      - redis
+      - backend
+    environment:
+      - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
     networks:
       - vulnora-net
@@ -76,3 +74,6 @@ volumes:
 networks:
   vulnora-net:
     driver: bridge
+
+volumes:
+  redis_data:
