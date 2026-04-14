@@ -1,10 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
-from .routers import auth, users, scans, assets
-from .celery_app import celery_app   # noqa: F401
+from .routers import auth, users, scans, assets, zap
+from .celery_app import celery_app
 
-# Optional: Pre-warm nuclei templates on startup
 import subprocess
 
 app = FastAPI(
@@ -18,7 +17,7 @@ async def startup_event():
         subprocess.run(["nuclei", "-update-templates"], timeout=60, capture_output=True)
         print("Nuclei templates updated successfully")
     except:
-        pass  # Non-critical
+        pass
 
 Base.metadata.create_all(bind=engine)
 
@@ -34,6 +33,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(scans.router)
 app.include_router(assets.router)
+app.include_router(zap.router)
 
 @app.get("/")
 def root():
