@@ -1,5 +1,5 @@
 # backend/app/schemas.py
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Dict
 from datetime import datetime
 
@@ -38,7 +38,7 @@ class AssetOut(AssetBase):
     class Config:
         from_attributes = True
 
-# Available logic flaw checks (updated with all new ones)
+# Available logic flaw checks 
 LOGIC_CHECK_OPTIONS = [
     "client_side_trust",
     "idor",
@@ -54,13 +54,19 @@ LOGIC_CHECK_OPTIONS = [
     "balance_manipulation"
 ]
 
+class ScanAuth(BaseModel):
+    auth_type: str = Field("none", description="none | cookie | jwt")
+    cookies: Optional[Dict[str, str]] = None
+    jwt: Optional[str] = None
+
 class ScanCreate(BaseModel):
     target: str
     modules: List[str] = [
         "subdomains", "ports", "nuclei", "headers", "tech", 
-        "dirs", "screenshot", "logic_flaws"
+        "dirs", "screenshot", "logic_flaws", "zap"
     ]
     selected_logic_checks: Optional[List[str]] = None
+    auth_info: Optional[ScanAuth] = None   # : Authenticated logic scanning
 
 class ScanOut(BaseModel):
     id: int
@@ -71,3 +77,4 @@ class ScanOut(BaseModel):
     modules_used: List[str]
     result_data: Dict
     status: str
+    auth_info: Optional[Dict] = None   # ← 
