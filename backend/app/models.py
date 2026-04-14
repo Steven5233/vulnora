@@ -1,3 +1,4 @@
+# backend/app/models.py
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, JSON, ForeignKey
 from sqlalchemy.sql import func
 from .database import Base
@@ -8,7 +9,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="user")  # "user" or "admin"
+    role = Column(String, default="user")
     disabled = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -29,4 +30,5 @@ class Scan(Base):
     risk_score = Column(Float, nullable=True)
     modules_used = Column(JSON, nullable=True, default=list)
     result_data = Column(JSON, nullable=True, default=dict)
-    status = Column(String, default="completed")  # pending, running, completed, failed
+    status = Column(String, default="completed")
+    auth_info = Column(JSON, nullable=True, default=dict)   # ←W
