@@ -17,6 +17,7 @@ from ..constants import COMPLIANCE_MAP, ALLOWED_MODULES, TOOL_CONFIG
 from ..celery_app import celery_app
 from .report import generate_pdf_report
 from ..logic_scanner import LogicFlawScanner
+from ..idorforge_scanner import IDORForgeProScanner
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -26,7 +27,6 @@ def run_tool(module: str, target: str, selected_logic_checks: List[str] = None,
     if not config:
         return {"module": module, "status": "skipped", "data": None}
 
-    # === AUTHENTICATED LOGIC FLAWS ===
     if module == "logic_flaws":
         try:
             checks_to_run = selected_logic_checks or list(LogicFlawScanner.LOGIC_CHECKS.keys())
@@ -41,19 +41,15 @@ def run_tool(module: str, target: str, selected_logic_checks: List[str] = None,
         except Exception as e:
             return {"module": module, "status": "error", "data": str(e)}
 
-    # === OWASP ZAP INTEGRATION ===
     if module == "zap":
         try:
             zap_base = "http://zap:8080"
             target_url = f"http://{target}" if not target.startswith(("http://", "https://")) else target
             with httpx.Client(timeout=120) as client:
-                # Spider
                 client.get(f"{zap_base}/JSON/spider/action/scan/", params={"url": target_url, "maxChildren": "300"})
                 time.sleep(30)
-                # Active Scan
                 client.get(f"{zap_base}/JSON/ascan/action/scan/", params={"url": target_url, "recurse": "true"})
                 time.sleep(60)
-                # Get alerts
                 resp = client.get(f"{zap_base}/JSON/core/view/alerts/", params={"baseurl": target_url})
                 alerts = resp.json().get("alerts", []) if resp.status_code == 200 else []
             zap_findings = []
@@ -72,7 +68,18 @@ def run_tool(module: str, target: str, selected_logic_checks: List[str] = None,
         except Exception as e:
             return {"module": module, "status": "error", "data": str(e)}
 
-    # === ORIGINAL MODULES (100% preserved) ===
+    if module == "idorforge":
+        try:
+            scanner = IDORForgeProScanner(
+                target,
+                auth_cookies=auth_info.get("cookies") if auth_info else None,
+                auth_jwt=auth_info.get("jwt") if auth_info else None
+            )
+            findings = asyncio.run(scanner.run())
+            return {"module": module, "status": "completed", "data": findings}
+        except Exception as e:
+            return {"module": module, "status": "error", "data": str(e)}
+
     cmd = [arg.format(target=target) for arg in config.get("cmd_base", [])]
     timeout = config.get("timeout", 120)
     try:
@@ -156,92 +163,83 @@ def run_real_scan(target: str, modules: List[str], selected_logic_checks: List[s
                 if mod == "logic_flaws" and isinstance(mod_result.get("data"), list):
                     logic_findings.extend(mod_result["data"])
             except Exception as e:
-                result["progress"][mod] = "failed"
-                all_module_results[mod] = {"error": str(e)}
+                all_module_results[mod] = None
+                result["progress"][mod] = "error"
 
-    result["subdomains"] = all_module_results.get("subdomains")
-    result["nmap"] = all_module_results.get("ports")
-    result["nuclei"] = nuclei_findings
-    result["tech"] = all_module_results.get("tech", {}).get("tech") if "tech" in all_module_results else []
-    result["headers"] = all_module_results.get("headers", {})
-    result["directories"] = all_module_results.get("dirs")
-    result["logic_flaws"] = logic_findings
+    risk_score = 0
+    for f in nuclei_findings:
+        if f.get("severity") == "critical":
+            risk_score += 25
+        elif f.get("severity") == "high":
+            risk_score += 15
+        elif f.get("severity") == "medium":
+            risk_score += 5
+    result["risk_score"] = min(risk_score, 100)
+    result["findings"] = all_module_results
+    result["modules"] = all_module_results
+    return result
 
-    cvss_sum = sum(f.get("cvss_score", 0) for f in nuclei_findings)
-    num_findings = len(nuclei_findings) + len(logic_findings)
-    risk_score = round(min(9.9, 1.8 + (num_findings * 0.9) + (cvss_sum / 7.5)), 1)
 
-    return {"risk_score": risk_score, "data": result, "nuclei_findings": nuclei_findings, "logic_findings": logic_findings}
-
-
-@celery_app.task(bind=True, name="scan.run_full_scan", max_retries=2, default_retry_delay=60)
-def run_full_scan_task(self, scan_id: int, selected_logic_checks: List[str] = None,
+@celery_app.task(bind=True, name="scan.run_full_scan", max_retries=2,
+                 default_retry_delay=60)
+def run_full_scan_task(self, scan_id: int,
+                       selected_logic_checks: List[str] = None,
                        auth_info: Optional[Dict] = None):
     db = SessionLocal()
-    scan = None
     try:
         scan = db.query(models.Scan).filter(models.Scan.id == scan_id).first()
         if not scan:
-            return {"status": "error", "message": "Scan not found"}
-
+            return
         scan.status = "running"
-        scan.result_data = {"progress": {mod: "pending" for mod in scan.modules_used}}
         db.commit()
 
-        tool_result = run_real_scan(scan.target, scan.modules_used, selected_logic_checks, auth_info)
+        scan_result = run_real_scan(scan.target, scan.modules, selected_logic_checks, auth_info)
 
-        scan.risk_score = tool_result.get("risk_score", 0.0)
-        scan.result_data = tool_result.get("data", {})
         scan.status = "completed"
+        scan.risk_score = scan_result.get("risk_score", 0)
+        scan.findings = json.dumps(scan_result.get("findings", {}))
         db.commit()
-
-        return {"status": "completed", "scan_id": scan_id}
     except Exception as e:
-        if scan:
+        if 'scan' in locals():
             scan.status = "failed"
             db.commit()
-        return {"status": "error", "message": str(e)}
+        self.retry(exc=e)
     finally:
         db.close()
 
 
 @router.post("/", response_model=schemas.ScanOut)
-def create_scan(
-    scan_in: schemas.ScanCreate,
-    db: Session = Depends(dependencies.get_db),
-    current_user = Depends(dependencies.get_current_user)
-):
-    for mod in scan_in.modules:
-        if mod not in ALLOWED_MODULES:
-            raise HTTPException(status_code=400, detail=f"Invalid module: {mod}")
-
-    db_scan = models.Scan(
-        user_id=current_user.id,
+def create_scan(scan_in: schemas.ScanCreate,
+                db: Session = Depends(dependencies.get_db),
+                current_user = Depends(dependencies.get_current_user)):
+    if not all(m in ALLOWED_MODULES for m in scan_in.modules):
+        raise HTTPException(status_code=400, detail="Invalid module")
+    scan = models.Scan(
         target=scan_in.target,
-        modules_used=scan_in.modules,
-        auth_info=scan_in.auth_info.model_dump() if scan_in.auth_info else {},
-        status="pending"
+        modules=scan_in.modules,
+        user_id=current_user.id
     )
-    db.add(db_scan)
+    db.add(scan)
     db.commit()
-    db.refresh(db_scan)
+    db.refresh(scan)
 
-    run_full_scan_task.delay(
-        db_scan.id,
-        scan_in.selected_logic_checks,
-        scan_in.auth_info.model_dump() if scan_in.auth_info else None
+    celery_app.send_task(
+        "scan.run_full_scan",
+        args=[scan.id, scan_in.selected_logic_checks, scan_in.auth_info]
     )
-
-    return db_scan
+    return scan
 
 
 @router.get("/", response_model=List[schemas.ScanOut])
-def list_scans(db: Session = Depends(dependencies.get_db), current_user = Depends(dependencies.get_current_user)):
+def list_scans(db: Session = Depends(dependencies.get_db),
+               current_user = Depends(dependencies.get_current_user)):
     return db.query(models.Scan).filter(models.Scan.user_id == current_user.id).all()
 
 
 @router.get("/{scan_id}", response_model=schemas.ScanOut)
-def get_scan(scan_id: int, db: Session = Depends(dependencies.get_db), current_user = Depends(dependencies.get_current_user)):
+def get_scan(scan_id: int,
+             db: Session = Depends(dependencies.get_db),
+             current_user = Depends(dependencies.get_current_user)):
     scan = db.query(models.Scan).filter(models.Scan.id == scan_id, models.Scan.user_id == current_user.id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
