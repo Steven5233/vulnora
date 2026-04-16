@@ -42,9 +42,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-for key in ["token", "user", "role", "current_scan_id", "polling", "scan_start_time"]:
+for key in ["token", "user", "role", "current_scan_id", "polling", "scan_start_time", "zap_history"]:
     if key not in st.session_state:
-        st.session_state[key] = None if key not in ["polling"] else False
+        st.session_state[key] = None if key not in ["polling", "zap_history"] else False
 
 def get_headers():
     return {"Authorization": f"Bearer {st.session_state.token}"} if st.session_state.token else {}
@@ -54,15 +54,21 @@ def api_get(endpoint, params=None):
         r = requests.get(f"{API_BASE}/{endpoint}", headers=get_headers(), timeout=15, params=params)
         r.raise_for_status()
         return r.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"API Connection Error: {str(e)}")
+        return None
     except Exception as e:
         st.error(f"API Error: {str(e)}")
         return None
 
 def api_post(endpoint, json_data=None):
     try:
-        r = requests.post(f"{API_BASE}/{endpoint}", json=json_data, headers=get_headers(), timeout=15)
+        r = requests.post(f"{API_BASE}/{endpoint}", json=json_data, headers=get_headers(), timeout=20)
         r.raise_for_status()
         return r.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"API Connection Error: {str(e)}")
+        return None
     except Exception as e:
         st.error(f"API Error: {str(e)}")
         return None
@@ -80,7 +86,7 @@ if not st.session_state.token:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<h1 style='text-align:center;'>Vulnora</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#94a3b8; font-size:1.15rem;'>Vulnora</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#94a3b8; font-size:1.15rem;'>Advanced Vulnerability Platform</p>", unsafe_allow_html=True)
         st.markdown("<p style='text-align:center; color:#64748b;'>Real-Time Scanning • Logic Flaws • Automated & Manual Testing • Global Compliance</p>", unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Sign In", "Register"])
         with tab1:
@@ -88,17 +94,17 @@ if not st.session_state.token:
             password = st.text_input("Password", type="password", key="login_pass")
             if st.button("Sign In", type="primary", use_container_width=True):
                 try:
-                    resp = requests.post(f"{API_BASE}/auth/token", data={"username": username, "password": password})
+                    resp = requests.post(f"{API_BASE}/auth/token", data={"username": username, "password": password}, timeout=10)
                     resp.raise_for_status()
                     st.session_state.token = resp.json()["access_token"]
-                    me = requests.get(f"{API_BASE}/users/me", headers=get_headers())
+                    me = requests.get(f"{API_BASE}/users/me", headers=get_headers(), timeout=10)
                     user_data = me.json()
                     st.session_state.user = user_data
                     st.session_state.role = user_data.get("role", "user")
                     st.success(f"Welcome back, {username}")
                     st.rerun()
                 except Exception as e:
-                    st.error(str(e))
+                    st.error(f"Login failed: {str(e)}")
         with tab2:
             reg_username = st.text_input("Username", key="reg_username")
             reg_email = st.text_input("Email", key="reg_email")
@@ -107,10 +113,10 @@ if not st.session_state.token:
                 if all([reg_username, reg_email, reg_password]):
                     try:
                         payload = {"username": reg_username, "email": reg_email, "password": reg_password}
-                        requests.post(f"{API_BASE}/auth/register", json=payload).raise_for_status()
+                        requests.post(f"{API_BASE}/auth/register", json=payload, timeout=10).raise_for_status()
                         st.success("Account created successfully. Please sign in.")
                     except Exception as e:
-                        st.error(str(e))
+                        st.error(f"Registration failed: {str(e)}")
     st.stop()
 
 with st.sidebar:
@@ -125,20 +131,76 @@ with st.sidebar:
         "Reports": "reports",
         "Compliance": "compliance",
         "Proxy Dashboard": "proxy",
-        "Repeater": "repeater"
+        "Repeater": "repeater",
+        "IDORForge Pro": "idorforge"
     }
     if st.session_state.role == "admin":
         pages["Administration"] = "admin"
     selection = st.radio("Navigation", list(pages.keys()), label_visibility="collapsed")
     current_page = pages[selection]
     st.divider()
-    st.success(f"👤 {st.session_state.user.get('username')} • {st.session_state.role.upper()}")
+    st.success(f"{st.session_state.user.get('username')} • {st.session_state.role.upper()}")
     if st.button("Logout", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
 st.markdown(f"<h1>Vulnora • {st.session_state.user.get('username')}</h1>", unsafe_allow_html=True)
-st.caption("Vulnora • Real-Time Vulnerability Scanning • Automated & Manual Testing • Global Compliance")
+st.caption("Real-Time Scanning • Logic Flaws • Automated & Manual Testing • Global Compliance")
+
+def show_dashboard():
+    st.markdown("### Overview")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Assets", "28", "↑4")
+    with col2:
+        st.metric("Critical Findings", "7", "↓2")
+    with col3:
+        st.metric("Scans Today", "12")
+    with col4:
+        st.metric("Risk Score", "42", "↓")
+    st.divider()
+    st.subheader("Recent Activity")
+    recent = api_get("scans/?limit=5")
+    if recent:
+        df = pd.DataFrame(recent)
+        st.dataframe(df, use_container_width=True)
+
+def show_assets():
+    st.subheader("Target Assets")
+    with st.form("add_asset"):
+        target = st.text_input("Target URL / IP")
+        if st.form_submit_button("Add Asset"):
+            result = api_post("assets/", {"target": target})
+            if result:
+                st.success("Asset added successfully")
+    assets = api_get("assets/")
+    if assets:
+        df = pd.DataFrame(assets)
+        st.dataframe(df, use_container_width=True)
+
+def show_scan():
+    st.subheader("Launch New Scan")
+    target = st.text_input("Target", placeholder="https://example.com")
+    modules = st.multiselect("Scan Modules", ["nuclei", "zap", "logic_flaws", "idorforge"])
+    with st.expander("Authentication (Optional)"):
+        auth_type = st.radio("Auth Type", ["None", "Cookies (JSON)", "JWT"], horizontal=True)
+        auth_info = {}
+        if auth_type == "Cookies (JSON)":
+            cookies_str = st.text_area("Cookies JSON", '{"session":"abc123"}')
+            try:
+                auth_info["cookies"] = json.loads(cookies_str)
+            except:
+                st.warning("Invalid JSON")
+        elif auth_type == "JWT":
+            auth_info["jwt"] = st.text_input("JWT Token")
+    if st.button("Start Scan", type="primary"):
+        payload = {"target": target, "modules": modules, "auth_info": auth_info}
+        result = api_post("scans/", payload)
+        if result and "scan_id" in result:
+            st.session_state.current_scan_id = result["scan_id"]
+            st.session_state.scan_start_time = time.time()
+            st.success("Scan started successfully")
+            st.rerun()
 
 def show_live_progress(scan_id):
     placeholder = st.empty()
@@ -149,217 +211,168 @@ def show_live_progress(scan_id):
             placeholder.error("Failed to fetch scan status.")
             break
         status = scan.get("status", "unknown")
-        risk = scan.get("risk_score")
+        risk = scan.get("risk_score", "N/A")
         elapsed = int(time.time() - start_time)
         with placeholder.container():
             st.markdown("### Scan Progress")
-            col1, col2 = st.columns([3,1])
+            col1, col2, col3 = st.columns([3, 1, 1])
             with col1:
-                if status == "pending":
-                    st.info("Queued – Waiting for worker")
-                    prog = 10
-                elif status == "running":
-                    st.warning(f"Scanning **{scan.get('target')}** • Elapsed: {elapsed}s")
-                    prog = min(30 + (elapsed % 60), 85)
+                if status == "running":
+                    st.progress(70)
+                    st.markdown(f"<span class='status-running'>● RUNNING</span>", unsafe_allow_html=True)
                 elif status == "completed":
-                    st.success(f"✅ Scan Completed • Risk Score: **{risk}/10**")
-                    st.session_state.polling = False
-                    st.session_state.current_scan_id = scan_id
-                    break
-                elif status == "failed":
-                    st.error("❌ Scan Failed")
-                    st.session_state.polling = False
-                    break
+                    st.progress(100)
+                    st.markdown(f"<span class='status-completed'>● COMPLETED</span>", unsafe_allow_html=True)
                 else:
-                    prog = 50
-                st.progress(prog / 100, text=f"Status: {status.upper()} • Time elapsed: {elapsed}s")
-        if status in ["completed", "failed"]:
-            break
+                    st.progress(30)
+                    st.info(f"Status: {status}")
+            with col2:
+                st.metric("Risk Score", risk)
+            with col3:
+                st.metric("Elapsed", f"{elapsed}s")
+            if status in ["completed", "failed"]:
+                break
         time.sleep(3)
 
-if current_page == "dashboard":
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("ZAP Proxy Status", "🟢 Running", "http://localhost:8090")
-    with col2:
-        st.metric("Active Modules", "12", "+ Logic Flaws & ZAP")
-    with col3:
-        st.metric("Manual Testing", "🟢 Enabled", "Proxy + Repeater")
-    with col4:
-        st.metric("Compliance", "Ready", "NIST • ISO • GDPR • PCI-DSS")
-    
-    st.divider()
-    st.subheader("Recent Activity")
-    scans = api_get("scans/") or []
-    if scans:
-        recent = pd.DataFrame(scans[-5:])
-        st.dataframe(recent[["target", "status", "risk_score", "created_at"]], use_container_width=True)
-    else:
-        st.info("No scans yet. Start your first scan from the Launch Scan page.")
-
-elif current_page == "assets":
-    st.subheader("Target Assets")
-    assets = api_get("assets") or []
-    if st.button("➕ Add New Asset", type="primary"):
-        with st.form("add_asset"):
-            target = st.text_input("Target URL / IP / Domain")
-            description = st.text_area("Description (optional)")
-            submitted = st.form_submit_button("Add Asset")
-            if submitted and target:
-                api_post("assets/", {"target": target, "description": description})
-                st.success("Asset added")
-                st.rerun()
-    if assets:
-        df = pd.DataFrame(assets)
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("No assets configured yet.")
-
-elif current_page == "scan":
-    st.subheader("Launch Vulnerability Scan")
-    assets = api_get("assets") or []
-    if not assets:
-        st.warning("Please add assets first.")
-        st.stop()
-    target = st.selectbox("Select Target", [a["target"] for a in assets])
-    modules = st.multiselect(
-        "Scanning Modules",
-        ["subdomains", "ports", "nuclei", "headers", "tech", "dirs", "logic_flaws", "zap"],
-        default=["nuclei", "logic_flaws", "zap"]
-    )
-    logic_checks = st.multiselect(
-        "Logic Flaw Checks",
-        ["idor", "bfla", "multi_account_manipulation", "price_manipulation", "mass_assignment"],
-        default=["idor", "bfla"]
-    )
-    if st.button("🚀 Start Full Scan", type="primary", use_container_width=True):
-        payload = {
-            "target": target,
-            "modules": modules,
-            "selected_logic_checks": logic_checks
-        }
-        result = api_post("scans/", payload)
-        if result and "id" in result:
-            st.session_state.current_scan_id = result["id"]
-            st.session_state.scan_start_time = time.time()
-            st.session_state.polling = True
-            show_live_progress(result["id"])
-            st.rerun()
-
-elif current_page == "results":
-    st.subheader("Live Scan Results")
-    if st.session_state.current_scan_id:
+def show_results():
+    if st.session_state.get("current_scan_id"):
         scan = api_get(f"scans/{st.session_state.current_scan_id}")
         if scan:
             st.json(scan)
+            if scan.get("status") == "running":
+                show_live_progress(st.session_state.current_scan_id)
     else:
-        st.info("No active scan. Launch a scan first.")
+        st.info("No active scan. Start one from Launch Scan.")
 
-elif current_page == "history":
-    st.subheader("Scan History")
-    scans = api_get("scans/") or []
+def show_history():
+    scans = api_get("scans/")
     if scans:
         df = pd.DataFrame(scans)
         st.dataframe(df, use_container_width=True)
-    else:
-        st.info("No scan history yet.")
 
-elif current_page == "reports":
-    st.subheader("Generated Reports")
-    scans = api_get("scans/") or []
-    for s in scans:
-        col1, col2 = st.columns([4,1])
-        with col1:
-            st.write(f"**{s.get('target')}** • Risk: {s.get('risk_score')} • {s.get('status')}")
-        with col2:
-            if st.button("📄 Download PDF", key=f"pdf_{s['id']}"):
-                pdf_data = api_get(f"scans/{s['id']}/report")
-                if pdf_data:
-                    st.download_button("Download", data=pdf_data, file_name=f"vulnora-report-{s['id']}.pdf", mime="application/pdf")
+def show_reports():
+    st.subheader("Reports")
+    scans = api_get("scans/")
+    if scans:
+        for s in scans:
+            if st.button(f"Generate Report for Scan {s.get('id')}"):
+                st.info("Report generation started (simulated in frontend)")
 
-elif current_page == "compliance":
+def show_compliance():
     st.subheader("Compliance Mapping")
-    st.info("Vulnora maps findings automatically to global standards.")
-    cols = st.columns(4)
-    with cols[0]:
-        st.metric("NIST SP 800-53", "Mapped", "Ready")
-    with cols[1]:
-        st.metric("ISO 27001", "Mapped", "Ready")
-    with cols[2]:
-        st.metric("GDPR", "Mapped", "Ready")
-    with cols[3]:
-        st.metric("PCI-DSS", "Mapped", "Ready")
+    st.write("NIST • ISO 27001 • GDPR • PCI-DSS")
 
-elif current_page == "proxy":
-    st.subheader("🛡️ Proxy Dashboard")
-    status = api_get("zap/status")
-    if status:
-        col1, col2 = st.columns([2,1])
-        with col1:
-            st.success(f"**ZAP Proxy Active** • {status.get('proxy_url')}")
-            st.info("Configure your browser proxy to the URL above and install the ZAP root CA for full HTTPS interception.")
-        with col2:
-            if st.button("🔄 Refresh Proxy Data"):
-                st.rerun()
-    
-    tab_proxy1, tab_proxy2, tab_proxy3 = st.tabs(["Sites Tree", "HTTP History", "Alerts"])
-    
-    with tab_proxy1:
-        sites = api_get("zap/sites") or []
-        if sites:
-            st.dataframe(pd.DataFrame(sites), use_container_width=True)
-        else:
-            st.info("No sites discovered yet. Browse through the proxy to populate.")
-    
-    with tab_proxy2:
-        st.markdown("### Recent HTTP History")
-        history = api_get("zap/history", params={"count": 100}) or []
-        if history:
-            df_history = pd.DataFrame(history)
-            st.dataframe(df_history[["method", "url", "status", "time"]], use_container_width=True)
-        else:
-            st.info("No history recorded yet.")
-    
-    with tab_proxy3:
-        alerts = api_get("zap/alerts") or []
-        if alerts:
-            df_alerts = pd.DataFrame(alerts)
-            st.dataframe(df_alerts, use_container_width=True)
-        else:
-            st.info("No alerts detected yet.")
-
-elif current_page == "repeater":
-    st.subheader("🔄 Request Repeater")
-    st.caption("Edit and resend requests captured from the Proxy")
-    
-    col_r1, col_r2 = st.columns([3,2])
-    with col_r1:
-        raw_request = st.text_area(
-            "Raw HTTP Request",
-            height=420,
-            placeholder="GET /api/users HTTP/1.1\nHost: example.com\n...",
-            key="repeater_raw"
-        )
-    with col_r2:
-        st.markdown("**Repeater Controls**")
-        follow_redirects = st.checkbox("Follow Redirects", value=True)
-        if st.button("📤 Send Request", type="primary", use_container_width=True):
-            if raw_request:
-                result = api_post("zap/repeater/send", {
-                    "request": raw_request,
-                    "followRedirects": follow_redirects
-                })
-                if result:
-                    st.success("Request sent successfully")
-                    st.json(result)
-            else:
-                st.warning("Please enter a request")
-    
+def show_proxy():
+    st.subheader("🕵️ ZAP Proxy Dashboard")
+    st.markdown("**Setup Instructions**")
+    st.info("""
+    1. Configure your browser proxy to **http://localhost:8090**  
+    2. Install ZAP Root CA: [Download Root CA](http://localhost:8080/OTHER/core/other/rootcert/)  
+    3. Enable HTTPS decryption in ZAP
+    """)
     st.divider()
-    st.caption("Tip: Copy requests directly from the Proxy History tab for quick testing and modification.")
+    st.subheader("Intercepted Requests")
+    if "zap_history" not in st.session_state or not st.session_state.zap_history:
+        st.session_state.zap_history = api_get("zap/history") or []
+    if st.session_state.zap_history:
+        for req in st.session_state.zap_history[-10:]:
+            st.markdown(f"<div class='proxy-history'>**{req.get('method')}** {req.get('url')} → {req.get('status')}</div>", unsafe_allow_html=True)
+    else:
+        st.info("No intercepted requests yet. Browse through the proxy.")
+    if st.button("Refresh Proxy History"):
+        st.session_state.zap_history = api_get("zap/history") or []
+        st.rerun()
 
-elif current_page == "admin":
+def show_repeater():
+    st.subheader("🔁 Repeater")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        method = st.selectbox("Method", ["GET", "POST", "PUT", "DELETE"])
+        url = st.text_input("URL", "http://localhost:3000/api/test")
+        headers = st.text_area("Headers (JSON)", "{}", height=150)
+        body = st.text_area("Body", "", height=200)
+    with col2:
+        st.markdown("**Response**")
+        response_placeholder = st.empty()
+    if st.button("Send Request", type="primary"):
+        try:
+            hdr = json.loads(headers) if headers.strip() else {}
+            resp = requests.request(method, url, headers=hdr, json=json.loads(body) if body.strip() else None, timeout=15)
+            response_placeholder.json({
+                "status": resp.status_code,
+                "headers": dict(resp.headers),
+                "body": resp.text[:2000]
+            })
+        except Exception as e:
+            response_placeholder.error(f"Request failed: {str(e)}")
+
+def show_idorforge_pro():
+    st.markdown("### 🛡️ IDORForge Pro")
+    st.caption("Advanced IDOR + Role-Based Privilege Escalation + Business Logic Flaw Hunter")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        target = st.text_input("Target (e.g. example.com or full URL)", key="idor_target")
+    with col2:
+        run_btn = st.button("🚀 Run IDORForge Pro Hunt", type="primary", use_container_width=True)
+    with st.expander("Authentication (Cookies / JWT)"):
+        auth_type = st.radio("Auth Type", ["None", "Cookies (JSON)", "JWT"], horizontal=True)
+        auth_data = {}
+        if auth_type == "Cookies (JSON)":
+            auth_data["cookies"] = st.text_area("Cookies JSON", '{"session":"abc123"}', height=100)
+        elif auth_type == "JWT":
+            auth_data["jwt"] = st.text_input("JWT Token")
+    if run_btn and target:
+        with st.spinner("Running IDORForge Pro..."):
+            payload = {
+                "target": target,
+                "modules": ["idorforge"],
+                "auth_info": auth_data
+            }
+            result = api_post("scans/", json_data=payload)
+            if result and "scan_id" in result:
+                st.session_state.current_scan_id = result["scan_id"]
+                st.session_state.scan_start_time = time.time()
+                st.success("IDORForge Pro scan started!")
+                show_live_progress(result["scan_id"])
+            else:
+                st.error("Failed to start IDORForge Pro scan")
+    if st.session_state.get("current_scan_id"):
+        scan = api_get(f"scans/{st.session_state.current_scan_id}")
+        if scan and scan.get("modules") and "idorforge" in scan.get("modules", {}):
+            st.subheader("🧪 IDORForge Pro Findings")
+            findings = scan["modules"]["idorforge"].get("data", [])
+            if findings:
+                df = pd.DataFrame(findings)
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("No findings yet – keep hunting!")
+    st.divider()
+    st.markdown("**Manual IDOR Tester**")
+    st.info("Use the Repeater tab above for manual PoC replay and testing.")
+
+def show_admin():
     st.subheader("Administration")
-    st.info("Admin controls will appear here for user and system management.")
+    st.write("Admin panel controls (users, settings, etc.)")
 
-st.markdown("<p class='builder-credit'>built by séç gúy -cybersecurity researcher</p>", unsafe_allow_html=True)
+if current_page == "dashboard":
+    show_dashboard()
+elif current_page == "assets":
+    show_assets()
+elif current_page == "scan":
+    show_scan()
+elif current_page == "results":
+    show_results()
+elif current_page == "history":
+    show_history()
+elif current_page == "reports":
+    show_reports()
+elif current_page == "compliance":
+    show_compliance()
+elif current_page == "proxy":
+    show_proxy()
+elif current_page == "repeater":
+    show_repeater()
+elif current_page == "idorforge":
+    show_idorforge_pro()
+elif current_page == "admin":
+    show_admin()
