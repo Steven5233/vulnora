@@ -75,7 +75,7 @@ def run_tool(module: str, target: str, selected_logic_checks: List[str] = None,
                 auth_cookies=auth_info.get("cookies") if auth_info else None,
                 auth_jwt=auth_info.get("jwt") if auth_info else None
             )
-            findings = asyncio.run(scanner.run())
+            findings = asyncio.run(scanner.run_all())
             return {"module": module, "status": "completed", "data": findings}
         except Exception as e:
             return {"module": module, "status": "error", "data": str(e)}
