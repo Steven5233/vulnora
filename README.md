@@ -1,4 +1,3 @@
-
 # Vulnora
 
 [![License](https://img.shields.io/github/license/Steven5233/vulnora)](LICENSE)
@@ -21,15 +20,15 @@ Built for ethical hackers, bug bounty hunters, penetration testers, and GRC prof
 
 ### Automated Scanning Engine
 - **Nuclei** – CVEs, misconfigurations, exposures
-- **OWASP ZAP** – Full Spider + Active Scan (NEW)
+- **OWASP ZAP** – Full Spider + Active Scan
 - **Subfinder + Nmap + httpx + Feroxbuster** – Recon & discovery
-- **Logic Flaws Scanner** – 12 real business logic vulnerabilities with HTTP requests
+- **Logic Flaws Scanner** – 12 real business logic vulnerabilities with live HTTP requests
 
-### Authenticated Logic Scanning (NEW)
+### Authenticated Logic Scanning
 - Full support for **Cookies** and **JWT** authentication
-- Multi-account manipulation, IDOR/BOLA, privilege escalation, and more — now works against authenticated targets
+- Multi-account manipulation, IDOR/BOLA, privilege escalation, and more — works against authenticated targets
 
-### Manual Pentesting Suite (NEW)
+### Manual Pentesting Suite
 - **ZAP Proxy** – Live traffic interception (browser proxy: `http://localhost:8090`)
 - **ZAP Repeater** – Edit and resend any request (full request/response editor)
 - Breakpoints, session management, JWT/cookie injection
@@ -48,7 +47,7 @@ ISO 27001 • NIST CSF • GDPR • PCI DSS • SOC 2 • CIS Controls
 
 ---
 
-## 🚀 Quick Start (Docker Recommended – Updated for ZAP + Proxy)
+## 🚀 Quick Start (Docker Recommended)
 
 ```bash
 git clone https://github.com/Steven5233/vulnora.git
@@ -106,7 +105,7 @@ docker compose down
 
 ## Advanced Business Logic Flaws Module
 
-Performs **real HTTP requests** to detect issues traditional scanners miss. Now fully supports authenticated sessions.
+Performs **real HTTP requests** to detect issues traditional scanners miss. Fully supports authenticated sessions with cookies or JWT.
 
 **12 Checks Included:**
 - Client-side trust / Price & Quantity Manipulation
@@ -115,7 +114,7 @@ Performs **real HTTP requests** to detect issues traditional scanners miss. Now 
 - Workflow & State Machine Bypass
 - Race Conditions
 - Price, Discount & Refund Abuse
-- **Multi-Account Manipulation** (cross-user attacks)
+- Multi-Account Manipulation (cross-user attacks)
 - Mass Assignment / Object Injection
 - HTTP Parameter Pollution (HPP)
 - Forced State Transition
@@ -129,7 +128,7 @@ Each check returns detailed PoCs that appear in the UI **and** PDF report.
 ## Architecture
 
 - **Backend**: FastAPI + SQLAlchemy + JWT Auth + Celery + Redis
-- **Scanning Engine**: Parallel `ThreadPoolExecutor` + custom async logic scanner
+- **Scanning Engine**: Parallel `ThreadPoolExecutor` + custom `LogicFlawScanner`
 - **OWASP ZAP**: Integrated via REST API (Spider + Active Scan + Proxy + Repeater)
 - **Frontend**: Streamlit with dark cyber theme + real-time polling
 - **Reports**: Enhanced FPDF with full logic flaws, ZAP findings, and compliance mapping
@@ -137,7 +136,7 @@ Each check returns detailed PoCs that appear in the UI **and** PDF report.
 
 ---
 
-## Project Structure (Key Updated Files)
+## Project Structure (Key Files)
 
 ```bash
 vulnora/
@@ -145,16 +144,16 @@ vulnora/
 │   ├── app/
 │   │   ├── logic_scanner.py          # 12 checks + cookies/JWT auth
 │   │   ├── routers/
-│   │   │   ├── scans.py              # Full scan orchestration + ZAP
-│   │   │   └── zap.py                # NEW: Proxy + Repeater API
+│   │   │   ├── scans.py              # Scan orchestration + ZAP
+│   │   │   └── zap.py                # Proxy + Repeater API
 │   │   ├── constants.py
 │   │   ├── schemas.py                # Updated with auth_info
 │   │   ├── models.py                 # Scan model with auth_info
-│   │   └── main.py                   # Includes new ZAP router
+│   │   └── main.py                   # Includes ZAP router
 │   └── celery_app.py
 ├── frontend/
-│   └── app.py                        # NEW Proxy Dashboard + Repeater pages
-├── docker-compose.yml                # Updated ZAP service (ports 8080 + 8090)
+│   └── app.py                        # Streamlit UI with Proxy + Repeater
+├── docker-compose.yml                # ZAP service (ports 8080 + 8090)
 ├── LICENSE
 └── README.md
 ```
@@ -163,17 +162,16 @@ vulnora/
 
 ## About the Author
 
-Vulnora is built by **Adoyi Steven** (séç gúy), a cybersecurity researcher and penetration tester focused on building practical tools for ethical hacking, bug bounty hunting, and enterprise GRC.
+Vulnora is built by **Adoyi Steven**, a cybersecurity researcher and penetration tester focused on building practical tools for ethical hacking, bug bounty hunting, and enterprise GRC.
 
 The goal: create a **free, powerful, and complete** platform that combines automated scanning with professional manual testing capabilities.
 
 ---
 
-## Roadmap (Updated)
+## Roadmap
 
-- ✅ **OWASP ZAP integration** (Spider + Active Scan)
+- ✅ **OWASP ZAP integration** (Spider + Active Scan + Proxy + Repeater)
 - ✅ **Authenticated logic scanning** (Cookies + JWT)
-- ✅ **Proxy + Repeater** (full manual interception & request editing)
 - 🔄 AI-powered summary for logic flaws
 - 🔄 Historical trending dashboard
 - 🔄 Scheduled scans
