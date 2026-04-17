@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from typing import List, Optional
 
 from celery import Celery
@@ -8,10 +9,12 @@ from .database import SessionLocal
 from .crud import get_asset_by_id, save_scan_findings
 from .logic_scanner import LogicFlawScanner
 
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 celery = Celery(
     "vulnora",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/1"
+    broker=redis_url,
+    backend=redis_url,
 )
 
 celery.conf.update(
