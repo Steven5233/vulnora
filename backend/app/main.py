@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from .database import engine, Base
 from .celery_app import run_logic_scan
-from .routers import assets, scans, auth
+from .routers import assets, scans, auth, zap   # ← added zap
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +25,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(assets.router, prefix="/assets", tags=["assets"])
 app.include_router(scans.router, prefix="/scans", tags=["scans"])
+app.include_router(zap.router)   
 
 @app.post("/scan/logic", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_logic_scan(request: dict):
