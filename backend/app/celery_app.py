@@ -1,35 +1,78 @@
-# backend/app/celery_app.py
+import asyncio
+import json
+from typing import List, Optional
+
 from celery import Celery
-from celery.schedules import crontab
-import os
 
-# Redis connection (use environment variables in production)
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+from .database import SessionLocal
+from .crud import get_asset_by_id, save_scan_findings
+from .logic_scanner import LogicFlawScanner
 
-celery_app = Celery(
+celery = Celery(
     "vulnora",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
-    include=["app.routers.scans"]   # where your tasks will live
+    broker="redis://localhost:6379/0",
+    backend="redis://localhost:6379/1"
 )
 
-# Optional: Celery configuration
-celery_app.conf.update(
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
+celery.conf.update(
     task_track_started=True,
-    task_time_limit=1800,        # 30 minutes max per scan
-    task_soft_time_limit=1500,
-    worker_prefetch_multiplier=1,  # important for long-running tasks
+    task_time_limit=900,
+    task_soft_time_limit=720,
+    worker_prefetch_multiplier=1,
 )
 
-# Optional: Scheduled tasks (e.g., daily template updates)
-celery_app.conf.beat_schedule = {
-    "update-nuclei-templates": {
-        "task": "app.routers.scans.update_nuclei_templates",
-        "schedule": crontab(hour=3, minute=0),   # every day at 3 AM
-    },
-}
+@celery.task(name="run_logic_scan", bind=True, max_retries=2)
+def run_logic_scan(self, asset_id: int, selected_checks: Optional[List[str]] = None):
+    db = SessionLocal()
+    scanner = None
+
+    try:
+        asset = get_asset_by_id(db, asset_id)
+        if not asset or not asset.target_url:
+            return {"status": "failed", "error": "Asset not found or target_url is missing"}
+
+        auth_cookies = {}
+        if hasattr(asset, "auth_cookies") and asset.auth_cookies:
+            try:
+                auth_cookies = json.loads(asset.auth_cookies)
+            except (json.JSONDecodeError, TypeError):
+                auth_cookies = {}
+
+        auth_jwt = getattr(asset, "auth_jwt", None)
+
+        scanner = LogicFlawScanner(
+            target=asset.target_url,
+            selected_checks=selected_checks,
+            auth_cookies=auth_cookies,
+            auth_jwt=auth_jwt,
+            aggression="medium"
+        )
+
+        findings = asyncio.run(scanner.run_all())
+
+        save_scan_findings(db, asset_id, scan_type="logic", findings=findings)
+
+        return {
+            "status": "completed",
+            "asset_id": asset_id,
+            "findings_count": len(findings),
+            "message": "Advanced IDORForge Pro v2 scan finished successfully"
+        }
+
+    except Exception as e:
+        if not str(e).startswith("Asset"):
+            self.retry(countdown=60, exc=e)
+
+        return {
+            "status": "failed",
+            "asset_id": asset_id,
+            "error": str(e)
+        }
+
+    finally:
+        db.close()
+        if scanner:
+            try:
+                asyncio.run(scanner.close())
+            except Exception:
+                pass
