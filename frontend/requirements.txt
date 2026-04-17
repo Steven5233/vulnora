@@ -1,3 +1,11 @@
-streamlit
-requests
-pandas
+fastapi
+uvicorn[standard]
+celery[redis]
+redis
+httpx
+beautifulsoup4
+playwright
+sqlalchemy
+alembic
+pydantic
+python-dotenv
