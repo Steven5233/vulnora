@@ -90,6 +90,137 @@ To stop:
 docker compose down
 ```
 
+## 🐧 Alternative: Manual Installation on Kali Linux
+
+Vulnora can be installed and run natively on **Kali Linux** without Docker. This is useful for users who prefer full control, easier debugging, or running on bare-metal Kali.
+
+### Prerequisites
+
+Make sure you have the following installed:
+
+```bash
+sudo apt update && sudo apt install -y \
+    python3 python3-pip python3-venv \
+    redis-server \
+    git curl wget
+```
+
+**Install OWASP ZAP** (required for Proxy + Repeater):
+
+```bash
+sudo apt install -y zaproxy
+# Or download the latest from https://www.zaproxy.org/download/
+```
+
+### Step-by-Step Setup
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/Steven5233/vulnora.git
+   cd vulnora
+   ```
+
+2. **Set up the backend environment**
+
+   ```bash
+   cd backend
+
+   # Create and activate virtual environment
+   python3 -m venv venv
+   source venv/bin/activate
+
+   # Install Python dependencies
+   pip install -r requirements.txt
+
+   # Configure environment
+   cp .env.example .env
+   ```
+
+   **Edit `backend/.env`** and set a strong `SECRET_KEY`:
+
+   ```env
+   SECRET_KEY=your-super-strong-random-secret-key-here
+   # You can generate one with: openssl rand -hex 32
+   ```
+
+   (Optional) Adjust other variables like `DATABASE_URL` if you want to use PostgreSQL instead of SQLite.
+
+3. **Start supporting services**
+
+   - **Redis** (required for Celery):
+
+     ```bash
+     sudo systemctl start redis-server
+     sudo systemctl enable redis-server   # optional: auto-start on boot
+     ```
+
+   - **OWASP ZAP** (in daemon/headless mode for Proxy):
+
+     Open a new terminal and run:
+
+     ```bash
+     zap.sh -daemon -port 8090 -config api.disablekey=true -config proxy.port=8090
+     ```
+
+     ZAP will listen on `http://localhost:8090`.
+
+4. **Start the Backend (FastAPI)**
+
+   In the `backend/` directory (with venv activated):
+
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+   The API will be available at `http://localhost:8000`.
+
+5. **Start Celery Worker**
+
+   Open another terminal, navigate to `backend/`, activate the venv, and run:
+
+   ```bash
+   celery -A celery_app worker --loglevel=info
+   ```
+
+   (Optional) Start Celery Beat if scheduled tasks are added later:
+
+   ```bash
+   celery -A celery_app beat --loglevel=info
+   ```
+
+6. **Start the Frontend (Streamlit)**
+
+   Open yet another terminal:
+
+   ```bash
+   cd ../frontend
+   streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+   ```
+
+### Access Points (Manual Setup)
+
+- **Frontend (UI)**: http://localhost:8501
+- **Backend API**: http://localhost:8000
+- **ZAP Proxy**: http://localhost:8090 (configure your browser to use this proxy)
+- **ZAP Root CA** (for HTTPS decryption): Visit `http://localhost:8080/OTHER/core/other/rootcert/` in ZAP-enabled browser and import the certificate
+
+### Useful Commands
+
+- **Stop services**: Use `Ctrl + C` in each terminal, or `sudo systemctl stop redis-server`
+- **View logs**: Check terminal outputs or add `--loglevel=debug` for more details
+- **Rebuild dependencies**: `pip install -r requirements.txt --upgrade`
+
+### Notes & Troubleshooting
+
+- Make sure Redis is running before starting Celery.
+- For production-like use on Kali, consider using `tmux` or `screen` to manage multiple terminals.
+- If you encounter port conflicts, change ports in ZAP (`-port 8090`), uvicorn (`--port 8000`), or Streamlit (`--server.port 8501`).
+- The advanced IDOR/BOLA scanners (`logic_scanner.py` and `idorforge_scanner.py`) require valid authentication cookies/JWT when testing — provide them through the UI.
+- ZAP integration works via its REST API on port 8090.
+
+**Docker is still the recommended and easiest way** for most users, especially for quick testing. Use the manual Kali setup when you need deeper customization or are running on a dedicated Kali machine.
+
 ---
 
 ## How to Use
