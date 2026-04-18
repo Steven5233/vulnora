@@ -1,6 +1,7 @@
-# Vulnora
 
-[![License](https://img.shields.io/github/license/Steven5233/vulnora)](LICENSE)
+# Vulnora v2.1.0
+
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](docker-compose.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue)](backend/requirements.txt)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-brightgreen)](backend/requirements.txt)
@@ -16,17 +17,29 @@ Built for ethical hackers, bug bounty hunters, penetration testers, and GRC prof
 
 ---
 
+## ✨ What's New in v2.1.0
+
+- **Advanced IDOR/BOLA & Logic Flaws Engine** — Now includes multi-account creation, cross-session manipulation, GraphQL object manipulation, bulk operations, write-only IDOR, and business logic bypasses that **90% of automated scanners and manual hunters miss**.
+- Enhanced `LogicFlawScanner` with dedicated `IDORForgeProScanner`.
+- Improved authenticated scanning with dynamic test account registration and session switching.
+- Better discovery engine (`_smart_discovery`) for extracting real object IDs from JSON responses.
+- Updated reporting with detailed PoCs for complex authorization flaws.
+
+---
+
 ## ✨ Key Features
 
 ### Automated Scanning Engine
 - **Nuclei** – CVEs, misconfigurations, exposures
 - **OWASP ZAP** – Full Spider + Active Scan
 - **Subfinder + Nmap + httpx + Feroxbuster** – Recon & discovery
-- **Logic Flaws Scanner** – 12 real business logic vulnerabilities with live HTTP requests
+- **Advanced Logic Flaws Scanner** – Business logic vulnerabilities with real HTTP requests and multi-account testing
 
-### Authenticated Logic Scanning
-- Full support for **Cookies** and **JWT** authentication
-- Multi-account manipulation, IDOR/BOLA, privilege escalation, and more — works against authenticated targets
+### Advanced Authenticated Logic Scanning
+- Full support for **Cookies**, **JWT**, and session management
+- **Multi-Account Manipulation** (cross-user IDOR/BOLA)
+- Dynamic test account creation for realistic privilege escalation and object access testing
+- IDORForge module: numeric swapping, mass assignment, GraphQL mutations, bulk operations, and more
 
 ### Manual Pentesting Suite
 - **ZAP Proxy** – Live traffic interception (browser proxy: `http://localhost:8090`)
@@ -38,7 +51,7 @@ Built for ethical hackers, bug bounty hunters, penetration testers, and GRC prof
 - Parallel scanning with Celery + Redis (background jobs, retries, live progress)
 - Selective module & logic flaw testing
 - Asset inventory + strict RBAC
-- Professional **PDF reports** with PoCs, risk scores, and compliance mapping
+- Professional **PDF reports** with PoCs, risk scores, evidence, and compliance mapping
 - Dark cyber-themed Streamlit UI with real-time updates
 - Export: JSON + PDF
 
@@ -83,56 +96,49 @@ docker compose down
 
 ### Automated Scans
 1. Register / Login
-2. Add **Assets** (targets you own or have permission to test)
+2. Add **Assets** (targets you own or have explicit permission to test)
 3. Go to **Launch Scan**
-4. Select modules (`nuclei`, `zap`, `logic_flaws`, etc.)
-5. For `logic_flaws`: choose specific checks + provide **Cookies (JSON)** or **JWT**
-6. Click **Start Full Scan** → watch live progress
-7. View results + download professional PDF report
+4. Select modules (`nuclei`, `zap`, `logic_flaws`, `idorforge`, etc.)
+5. For logic flaws: choose specific checks + provide **Cookies (JSON)** or **JWT**
+6. Click **Start Full Scan** → watch live progress in real time
+7. View results + download professional PDF report with full PoCs
 
 ### Manual Pentesting (Proxy + Repeater)
 1. Open **Proxy Dashboard** in Vulnora
-2. Set your browser proxy to `http://localhost:8090`
+2. Configure your browser proxy to `http://localhost:8090`
 3. (Optional) Install ZAP Root CA for HTTPS decryption
-4. Browse your target → see live **Sites** and **HTTP History**
-5. Go to **Repeater**
-6. Load any request from history, edit headers/body/cookies/JWT, and **Send**
-7. Use breakpoints for on-the-fly interception
+4. Browse your target → live **Sites** tree and **HTTP History**
+5. Go to **Repeater**, load any request, edit headers/body/cookies/JWT, and **Send**
+6. Use breakpoints for advanced interception
 
-**Perfect for deep manual testing after automated discovery.**
+**Ideal for deep manual validation after automated discovery of complex flaws like advanced IDOR/BOLA.**
 
 ---
 
-## Advanced Business Logic Flaws Module
+## Advanced Business Logic & Authorization Flaws Module
 
-Performs **real HTTP requests** to detect issues traditional scanners miss. Fully supports authenticated sessions with cookies or JWT.
+Performs **real, authenticated HTTP requests** to detect issues that traditional scanners routinely miss.
 
-**12 Checks Included:**
-- Client-side trust / Price & Quantity Manipulation
-- IDOR / Broken Object Level Authorization (BOLA)
-- Broken Function Level Authorization (BFLA)
-- Workflow & State Machine Bypass
-- Race Conditions
-- Price, Discount & Refund Abuse
-- Multi-Account Manipulation (cross-user attacks)
-- Mass Assignment / Object Injection
-- HTTP Parameter Pollution (HPP)
-- Forced State Transition
-- Coupon / Discount Stacking Abuse
-- Balance Manipulation / Refund Loop
+**Key Capabilities (v2.1.0):**
+- IDOR / Broken Object Level Authorization (BOLA) with smart ID discovery
+- **Multi-Account Manipulation** — dynamically creates test accounts and tests cross-user access/modification
+- GraphQL object manipulation and mutations
+- Bulk operations and write-only IDOR
+- Mass assignment, workflow bypass, forced state transitions
+- Privilege escalation and business logic abuse (price, balance, coupon, etc.)
 
-Each check returns detailed PoCs that appear in the UI **and** PDF report.
+Each finding includes detailed evidence, similarity scores, and ready-to-use PoCs.
 
 ---
 
 ## Architecture
 
 - **Backend**: FastAPI + SQLAlchemy + JWT Auth + Celery + Redis
-- **Scanning Engine**: Parallel `ThreadPoolExecutor` + custom `LogicFlawScanner`
+- **Scanning Engine**: `LogicFlawScanner` + `IDORForgeProScanner` with async discovery and multi-session testing
 - **OWASP ZAP**: Integrated via REST API (Spider + Active Scan + Proxy + Repeater)
 - **Frontend**: Streamlit with dark cyber theme + real-time polling
-- **Reports**: Enhanced FPDF with full logic flaws, ZAP findings, and compliance mapping
-- **Deployment**: Docker Compose (includes dedicated ZAP container with Proxy port 8090)
+- **Reports**: Enhanced FPDF with logic flaws, ZAP findings, and compliance mapping
+- **Deployment**: Docker Compose (includes dedicated ZAP container)
 
 ---
 
@@ -142,18 +148,19 @@ Each check returns detailed PoCs that appear in the UI **and** PDF report.
 vulnora/
 ├── backend/
 │   ├── app/
-│   │   ├── logic_scanner.py          # 12 checks + cookies/JWT auth
+│   │   ├── logic_scanner.py          # Core multi-account IDOR/BOLA logic
+│   │   ├── idorforge_scanner.py      # Advanced IDORForgeProScanner
 │   │   ├── routers/
-│   │   │   ├── scans.py              # Scan orchestration + ZAP
+│   │   │   ├── scans.py              # Scan orchestration
 │   │   │   └── zap.py                # Proxy + Repeater API
 │   │   ├── constants.py
-│   │   ├── schemas.py                # Updated with auth_info
-│   │   ├── models.py                 # Scan model with auth_info
-│   │   └── main.py                   # Includes ZAP router
+│   │   ├── schemas.py
+│   │   ├── models.py
+│   │   └── main.py
 │   └── celery_app.py
 ├── frontend/
-│   └── app.py                        # Streamlit UI with Proxy + Repeater
-├── docker-compose.yml                # ZAP service (ports 8080 + 8090)
+│   └── app.py
+├── docker-compose.yml
 ├── LICENSE
 └── README.md
 ```
@@ -162,20 +169,17 @@ vulnora/
 
 ## About the Author
 
-Vulnora is built by **Adoyi Steven**, a cybersecurity researcher and penetration tester focused on building practical tools for ethical hacking, bug bounty hunting, and enterprise GRC.
-
-The goal: create a **free, powerful, and complete** platform that combines automated scanning with professional manual testing capabilities.
+Vulnora is built by **Adoyi Steven(séç gúy)**, a cybersecurity researcher and penetration tester focused on practical tools for ethical hacking, bug bounty hunting, and enterprise GRC.
 
 ---
 
 ## Roadmap
 
-- ✅ **OWASP ZAP integration** (Spider + Active Scan + Proxy + Repeater)
-- ✅ **Authenticated logic scanning** (Cookies + JWT)
-- 🔄 AI-powered summary for logic flaws
-- 🔄 Historical trending dashboard
-- 🔄 Scheduled scans
-- 🔄 Team / organization support
+- AI-powered summary and remediation suggestions for logic flaws
+- Historical trending dashboard
+- Scheduled scans
+- Team / organization support
+- Further enhancements to authorization flaw detection
 
 ---
 
@@ -191,13 +195,15 @@ Unauthorized scanning is illegal. Always respect program rules and legal boundar
 
 ## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** — see the [LICENSE](LICENSE) file for details.
 
-If Vulnora helps you find critical bugs or pass compliance audits, please star ⭐ the repository and consider contributing!
+The AGPL-3.0 ensures that any modifications or derivative works, especially when offered as a network service, must also be open-sourced under the same license.
+
+If Vulnora helps you discover critical authorization flaws or pass compliance audits, please star the repository ⭐ and consider contributing back to the community!
 
 ---
 
 **Made with passion for the cybersecurity, bug bounty, and GRC community.**
 
-Built to be the **go-to open-source tool** for modern vulnerability management and manual pentesting.
+Vulnora — The open-source platform that catches what others miss.
 ```
