@@ -1,4 +1,3 @@
-# backend/app/routers/scans.py
 import subprocess
 import time
 import json
@@ -73,9 +72,11 @@ def run_tool(module: str, target: str, selected_logic_checks: List[str] = None,
             scanner = IDORForgeProScanner(
                 target,
                 auth_cookies=auth_info.get("cookies") if auth_info else None,
-                auth_jwt=auth_info.get("jwt") if auth_info else None
+                auth_jwt=auth_info.get("jwt") if auth_info else None,
+                extra_sessions=[],
+                aggression="medium"
             )
-            findings = asyncio.run(scanner.run_all())
+            findings = asyncio.run(scanner.run())
             return {"module": module, "status": "completed", "data": findings}
         except Exception as e:
             return {"module": module, "status": "error", "data": str(e)}
