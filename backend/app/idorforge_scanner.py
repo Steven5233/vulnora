@@ -394,7 +394,7 @@ class IDORForgeProScanner:
     async def _graphql_advanced_manipulation(self):
         """Full introspection + dynamic IDOR/BOLA mutations (as previously expanded)."""
         gql_url = urljoin(self.target, "/graphql")
-        introspection_query = """query IntrospectionQuery { __schema { queryType { name } mutationType { name } types { ...FullType } } } fragment FullType on __Type { kind name fields(includeDeprecated: true) { name args { name type { kind name } } type { kind name } } inputFields { name } }"""  # Simplified for brevity; use the full one from previous response in production
+        introspection_query = """query IntrospectionQuery { __schema { queryType { name } mutationType { name } types { ...FullType } } } fragment FullType on __Type { kind name fields(includeDeprecated: true) { name args { name type { kind name } } type { kind name } } inputFields { name } }"""  
 
         resp = await self._request("POST", gql_url, json_data={"query": introspection_query})
         if not resp or resp.status_code != 200:
